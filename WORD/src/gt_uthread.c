@@ -9,20 +9,12 @@
 #include <setjmp.h>
 #include <errno.h>
 #include <assert.h>
-#include <time.h>
 
 #include "gt_include.h"
 /**********************************************************************/
 /** DECLARATIONS **/
-/*Each set of <# of matrix, credit> should have same CPU time but higher the credit is lower wait time is 
-  As # of matrix increase, CPU time increase.  */
 /**********************************************************************/
-extern void gt_yield();
-static void calcuate(uthread_struct_t **u_obj);
-long long REAL[128];
-long long u_begin[128];
 
-#define MILL 1000000
 
 /**********************************************************************/
 /* kthread runqueue and env */
@@ -39,13 +31,11 @@ static int uthread_init(uthread_struct_t *u_new);
 /* uthread creation */
 #define UTHREAD_DEFAULT_SSIZE (16 * 1024)
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int credit);
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid);
 
 /**********************************************************************/
 /** DEFNITIONS **/
-
-
-
+/**********************************************************************/
 
 /**********************************************************************/
 /* uthread scheduling */
@@ -57,10 +47,6 @@ static int uthread_init(uthread_struct_t *u_new)
 	stack_t oldstack;
 	sigset_t set, oldset;
 	struct sigaction act, oldact;
-
-	gettimeofday(&(u_new->credits.begin), NULL);
-
-	// printf("U: %lu\n", u_new->credits.begin.tv_sec);
 
 	gt_spin_lock(&(ksched_shared_info.uthread_init_lock));
 
@@ -122,70 +108,6 @@ static int uthread_init(uthread_struct_t *u_new)
 	return 0;
 }
 
-/* 
-Implement a	library function for voluntary preemption (gt_yield()).
-When a user-level thread executes this function, it should yield the CPU to the scheduler,
-which then schedules the next thread (per its scheduling scheme).	
-On voluntary preemption, the thread	should be charged credits only for the acctual CPU cycles used.
-*/
-/**********************************************************************/
-
-extern void gt_yield()
-{
- 	struct itimerval schd; 
-#if U_DEBUG
-	printf("\ngt_yield(%d) is called!\n", kthread_apic_id());
-#endif	
-
-  	kthread_block_signal(SIGVTALRM);
-  	kthread_block_signal(SIGUSR1);
-
-  	kthread_context_t *k_ctx;
-  	k_ctx = kthread_cpu_map[kthread_apic_id()];
-  	k_ctx->yid = 1;
-  	
-  	schd.it_interval.tv_sec = 0;
-  	schd.it_interval.tv_usec = 0;
-  	schd.it_value.tv_sec = 0;
-  	schd.it_value.tv_usec = 10000;
-
-#if 0
-  	printf("\n%d, %f, %f\n", schd.it_interval.tv_sec, schd.it_interval.tv_usec, schd.it_value.tv_sec);
-#endif 
-
-  	setitimer(ITIMER_VIRTUAL, &schd, NULL);
-	kthread_unblock_signal(SIGVTALRM);
-  	kthread_unblock_signal(SIGUSR1);
-}
-
-static void calculate(uthread_struct_t **u)
-{
-	uthread_struct_t *u_obj = *u;
-	struct timeval curr, ncurr, up;
-
-	up = ((&u_obj->credits)->updated);
-	gettimeofday(&curr, NULL);
-
-	#if U_DEBUG
-		printf("%s %d\n", "u_obj before:", u_obj->credits.used_sec);
-	#endif	
-	
-	u_obj->credits.used_sec += ((curr.tv_sec * MILL) + curr.tv_usec) - ((up.tv_sec * MILL) + up.tv_usec);
-
-	#if U_DEBUG
-		printf("%s %d\n", "u_obj after: ", u_obj->credits.used_sec);
-	#endif
-
-	long long t = (((curr.tv_sec * MILL) + curr.tv_usec) - ((up.tv_sec * MILL) + up.tv_usec))/1000;
-	u_obj->credits.credit_left -= t;
-
-	#if U_DEBUG
-		printf("\n%s[%d] %d decreased by %lu\n", "Credit left", u_obj->uthread_tid, u_obj->credits.credit_left, t);
-	#endif
-
-	*u = u_obj;
-}
-
 extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kthread_runqueue_t *))
 {
 	kthread_context_t *k_ctx;
@@ -193,51 +115,18 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 	uthread_struct_t *u_obj;
 
 	/* Signals used for cpu_thread scheduling */
-	kthread_block_signal(SIGVTALRM);
-	kthread_block_signal(SIGUSR1);
+	// kthread_block_signal(SIGVTALRM);
+	// kthread_block_signal(SIGUSR1);
 
-#if U_DEBUG
-	fprintf(stderr, "uthread_schedule invoked !! %d\n", kthread_apic_id());
+#if 0
+	fprintf(stderr, "uthread_schedule invoked !!\n");
 #endif
 
 	k_ctx = kthread_cpu_map[kthread_apic_id()];
 	kthread_runq = &(k_ctx->krunqueue);
 
-	// load balancing part
-	if(!k_ctx->yet)
-	{
-		int i;
-		for(i = 0; i < GT_MAX_KTHREADS; i++) 
-		{	
-			if (kthread_cpu_map[i])
-			{
-				if(kthread_cpu_map[i]->yet &&
-				 (u_obj = kthread_best_sched_uthread(kthread_runq)))
-				{
-
-					#if U_DEBUG
-						printf("%s\n", "uthread is moved");
-					#endif 
-					add_to_runqueue(kthread_cpu_map[i]->krunqueue.active_runq, &(kthread_cpu_map[i]
-									->krunqueue.kthread_runqlock), u_obj);
-				}
-			}
-		}
-	}
-
-	if(k_ctx->yid)  // for preemption
-	{
-		#if U_DEBUG
-			printf("\n%s\n", "yielded");
-		#endif
-		k_ctx->yid = 0;
-	}
-
 	if((u_obj = kthread_runq->cur_uthread))
 	{
-		// if the uthread is same thread that uthread running in kthread
-		calculate(&u_obj);
-
 		/*Go through the runq and schedule the next thread to run */
 		kthread_runq->cur_uthread = NULL;
 		
@@ -245,8 +134,6 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		{
 			/* XXX: Inserting uthread into zombie queue is causing improper
 			 * cleanup/exit of uthread (core dump) */
-
-			
 			uthread_head_t * kthread_zhead = &(kthread_runq->zombie_uthreads);
 			gt_spin_lock(&(kthread_runq->kthread_runqlock));
 			kthread_runq->kthread_runqlock.holder = 0x01;
@@ -258,28 +145,13 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 				gt_spin_lock(&ksched_info->ksched_lock);
 				ksched_info->kthread_cur_uthreads--;
 				gt_spin_unlock(&ksched_info->ksched_lock);
-				
-				REAL[u_obj->uthread_tid] = u_begin[u_obj->uthread_tid] = 0;
-				REAL[u_obj->uthread_tid] = u_obj->credits.used_sec;
-				u_begin[u_obj->uthread_tid] = u_obj->credits.begin.tv_usec + (u_obj->credits.begin.tv_sec * MILL);
-				#if U_DEBUG
-					printf("\nuthread (id:%d) created at %lus %lu\n", u_obj->uthread_tid, 
-						u_obj->credits.begin.tv_sec, 
-						u_obj->credits.begin.tv_usec);
-				#endif
 			}
-
-		}else{
+		}
+		else
+		{
 			/* XXX: Apply uthread_group_penalty before insertion */
 			u_obj->uthread_state = UTHREAD_RUNNABLE;
-
-			if (u_obj->credits.credit_left < 1) 
-			{
-				u_obj->credits.credit_left = u_obj->credits.def_credit;
-				add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
-			} else {
-				add_to_runqueue(kthread_runq->active_runq, &(kthread_runq->kthread_runqlock), u_obj);
-			}
+			add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
 			/* XXX: Save the context (signal mask not saved) */
 			if(sigsetjmp(u_obj->uthread_env, 0))
 				return;
@@ -296,6 +168,7 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			fprintf(stderr, "Quitting kthread (%d)\n", k_ctx->cpuid);
 			k_ctx->kthread_flags |= KTHREAD_DONE;
 		}
+
 		siglongjmp(k_ctx->kthread_env, 1);
 		return;
 	}
@@ -308,20 +181,7 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 	}
 
 	u_obj->uthread_state = UTHREAD_RUNNING;
-
-	struct itimerval curr, nxt;
-	getitimer(ITIMER_VIRTUAL, &curr);
-	gettimeofday(&(u_obj->credits.updated), NULL);
-
-	if(u_obj->credits.credit_left == u_obj->credits.def_credit)
-		kthread_init_vtalrm_timeslice();
-	else
-	{
-		nxt.it_value.tv_sec = (u_obj->credits.credit_left) / 1000;
-		nxt.it_value.tv_usec = 1000 * ((u_obj->credits.credit_left) % 1000);
-		setitimer(ITIMER_VIRTUAL, &nxt, NULL);
-	}
-
+	
 	/* Re-install the scheduling signal handlers */
 	kthread_install_sighandler(SIGVTALRM, k_ctx->kthread_sched_timer);
 	kthread_install_sighandler(SIGUSR1, k_ctx->kthread_sched_relay);
@@ -342,7 +202,7 @@ static void uthread_context_func(int signo)
 
 	kthread_runq = &(kthread_cpu_map[kthread_apic_id()]->krunqueue);
 
-	// printf("..... uthread_context_func .....\n");
+	printf("..... uthread_context_func .....\n");
 	/* kthread->cur_uthread points to newly created uthread */
 	if(!sigsetjmp(kthread_runq->cur_uthread->uthread_env,0))
 	{
@@ -370,14 +230,14 @@ static void uthread_context_func(int signo)
 
 extern kthread_runqueue_t *ksched_find_target(uthread_struct_t *);
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int credits)
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid)
 {
 	kthread_runqueue_t *kthread_runq;
 	uthread_struct_t *u_new;
 
 	/* Signals used for cpu_thread scheduling */
-	kthread_block_signal(SIGVTALRM);
-	kthread_block_signal(SIGUSR1);
+	// kthread_block_signal(SIGVTALRM);
+	// kthread_block_signal(SIGUSR1);
 
 	/* create a new uthread structure and fill it */
 	if(!(u_new = (uthread_struct_t *)MALLOCZ_SAFE(sizeof(uthread_struct_t))))
@@ -386,14 +246,11 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 		exit(0);
 	}
 
-	gettimeofday(&(u_new->credits.begin), NULL);
 	u_new->uthread_state = UTHREAD_INIT;
 	u_new->uthread_priority = DEFAULT_UTHREAD_PRIORITY;
 	u_new->uthread_gid = u_gid;
 	u_new->uthread_func = u_func;
 	u_new->uthread_arg = u_arg;
-	u_new->credits.credit_left = u_new->credits.def_credit = credits;
-	u_new->credits.used_sec = 0;
 
 	/* Allocate new stack for uthread */
 	u_new->uthread_stack.ss_flags = 0; /* Stack enabled for signal handling */
@@ -418,12 +275,6 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	kthread_runq = ksched_find_target(u_new);
 
 	*u_tid = u_new->uthread_tid;
-
-	#if U_DEBUG
-		printf("\nuthread (id:%d) created at %lus %lu\n", u_new->uthread_tid, u_new->credits.begin.tv_sec, 
-				u_new->credits.begin.tv_usec);
-	#endif
-
 	/* Queue the uthread for target-cpu. Let target-cpu take care of initialization. */
 	add_to_runqueue(kthread_runq->active_runq, &(kthread_runq->kthread_runqlock), u_new);
 
@@ -431,8 +282,8 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	/* WARNING : DONOT USE u_new WITHOUT A LOCK, ONCE IT IS ENQUEUED. */
 
 	/* Resume with the old thread (with all signals enabled) */
-	kthread_unblock_signal(SIGVTALRM);
-	kthread_unblock_signal(SIGUSR1);
+	// kthread_unblock_signal(SIGVTALRM);
+	// kthread_unblock_signal(SIGUSR1);
 
 	return 0;
 }
