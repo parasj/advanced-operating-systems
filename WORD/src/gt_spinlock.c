@@ -59,3 +59,35 @@ extern int gt_spin_unlock(gt_spinlock_t *spinlock)
 	   
 	return 0;
 }
+
+int gt_actual_spinlock_defined(volatile int * spinlock)
+{
+	int sp_val = 1;
+ 
+	while(sp_val)
+	{
+		__asm__ __volatile__ ("pause\n");
+		if(!*((volatile int *)spinlock))
+		{
+		__asm__ __volatile__ (
+			"movl $0x01, %%eax\n"
+			"xchg %%eax, (%1)\n"
+			"movl %%eax, %0\n"
+			:"=m"(sp_val) /* 0 */
+			: "r"(spinlock) /* 1 */
+			: "%eax"); /* No modified flags or clobbered registers */
+		}
+		else
+		return 0;
+	}
+	return 1;
+}
+
+
+extern int gt_spin_lock_defined(gt_spinlock_t* spinlock)
+{
+	if(!spinlock)
+		return -1;
+	int sp_val = gt_actual_spinlock_defined(&(spinlock->locked));
+	return sp_val;	
+}

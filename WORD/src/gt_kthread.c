@@ -259,6 +259,7 @@ static void ksched_priority(int signo)
 			syscall(__NR_tkill, tmp_k_ctx->tid, SIGUSR1);
 		}
 	}
+	
 
 	uthread_schedule(&sched_find_best_uthread);
 
@@ -364,6 +365,9 @@ yield_again:
 	/* app-func is called for main in gthread_app_exit */
 	k_ctx_main->kthread_app_func(NULL);
 #endif
+	//TACHANGE
+	kthread_block_signal(SIGVTALRM);
+	kthread_block_signal(SIGUSR1); 
 	return;
 }
 
@@ -379,6 +383,9 @@ extern void gtthread_app_exit()
 	while(!(k_ctx->kthread_flags & KTHREAD_DONE))
 	{
 		__asm__ __volatile__ ("pause\n");
+		// TACHANGE
+		kthread_unblock_signal(SIGVTALRM);
+	    kthread_unblock_signal(SIGUSR1); 
 		if(sigsetjmp(k_ctx->kthread_env, 0))
 		{
 			/* siglongjmp to this point is done when there

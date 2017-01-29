@@ -10,4 +10,6 @@
 #include "gt_pq.h"
 #include "gt_kthread.h"
 
+#include "gt_credit_scheduler.h"
+
 #endif
