@@ -78,11 +78,11 @@ static int kthread_handler(void *arg)
 {
 #define k_ctx ((kthread_context_t *)arg)
 
-#if 0
+#if GTTHREAD_LOG
 	printf("Thread to be scheduled on cpu\n");
 #endif
 	kthread_init(k_ctx);
-#if 0
+#if GTTHREAD_LOG
 	printf("\nThread (tid : %u, pid : %u,  cpu : %d, cpu-apic-id %d) ready to run !!\n\n", 
 		k_ctx->tid, k_ctx->pid, k_ctx->cpuid, k_ctx->cpu_apic_id);
 #endif
@@ -145,7 +145,7 @@ static inline void ksched_info_init(ksched_shared_info_t *ksched_info)
 
 static inline void KTHREAD_PRINT_SCHED_DEBUGINFO(kthread_context_t *k_ctx, char *str)
 {
-#if 0
+#if GTTHREAD_LOG
 	struct timeval tv;
 	/* Thread-safe ?? */
 	gettimeofday(&tv, NULL);
@@ -178,7 +178,7 @@ extern kthread_runqueue_t *ksched_find_target(uthread_struct_t *u_obj)
 	u_obj->cpu_id = kthread_cpu_map[target_cpu]->cpuid;
 	u_obj->last_cpu_id = kthread_cpu_map[target_cpu]->cpuid;
 
-#if 0
+#if GTTHREAD_LOG
 	printf("Target uthread (id:%d, group:%d) : cpu(%d)\n", u_obj->uthread_tid, u_obj->uthread_gid, kthread_cpu_map[target_cpu]->cpuid);
 #endif
 
@@ -280,7 +280,7 @@ static void gtthread_app_start(void *arg)
 	k_ctx = kthread_cpu_map[kthread_apic_id()];
 	assert((k_ctx->cpu_apic_id == kthread_apic_id()));
 
-#if 0
+#if GTTHREAD_LOG
 	printf("kthread (%d) ready to schedule", k_ctx->cpuid);
 #endif
 	while(!(k_ctx->kthread_flags & KTHREAD_DONE))
@@ -323,8 +323,8 @@ extern void gtthread_app_init()
 
 	/* Num of logical processors (cpus/cores) */
 	num_cpus = (int)sysconf(_SC_NPROCESSORS_CONF);
-#if 0
-	fprintf(stderr, "Number of cores : %d\n", num_cores);
+#if GTTHREAD_LOG
+	fprintf(stderr, "Number of cores : %d\n", num_cpus);
 #endif
 	/* kthreads (virtual processors) on all other logical processors */
 	for(inx=1; inx<num_cpus; inx++)
@@ -450,7 +450,7 @@ static int func(void *arg)
 	count = 0;
 	while(count <= 0x1fffffff)
 	{
-#if 0
+#if GTTHREAD_LOG
 		if(!(count % 5000000))
 		{
 			printf("uthread(id:%d, group:%d, cpu:%d) => count : %d\n", 

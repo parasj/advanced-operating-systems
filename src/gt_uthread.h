@@ -13,6 +13,14 @@ typedef unsigned int uthread_group_t;
 #define UTHREAD_CANCELLED 0x08
 #define UTHREAD_DONE 0x10
 
+#define UTHREAD_O1 0x01
+#define UTHREAD_CREDIT 0x02
+
+typedef struct uthread_credit_struct
+{
+	int credits_left;
+} uthread_credit_struct_t;
+
 /* uthread struct : has all the uthread context info */
 typedef struct uthread_struct
 {
@@ -32,6 +40,13 @@ typedef struct uthread_struct
 	int reserved2;
 	int reserved3;
 	
+	int sched_strategy; /* UTHREAD_O1, UTHREADkthread_sched_relay_CREDIT */
+	int sched_weight; /* user weight 0-3 */
+	int remaining_credits; /* credit allocation 1=25, 3=100 */
+
+	long runtime_us; // sum total of runtime for 
+	long last_us;
+
 	sigjmp_buf uthread_env; /* 156 bytes : save user-level thread context*/
 	stack_t uthread_stack; /* 12 bytes : user-level thread stack */
 	TAILQ_ENTRY(uthread_struct) uthread_runq;

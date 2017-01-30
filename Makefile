@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -g
 LDFLAGS = 
 LIBS = .
-SRC = src/gt_kthread.c src/gt_uthread.c src/gt_pq.c src/gt_signal.c src/gt_spinlock.c
+SRC = src/gt_kthread.c src/gt_uthread.c src/gt_pq.c src/gt_signal.c src/gt_spinlock.c src/gt_sched_credit.c
 OBJ = $(SRC:.c=.o)
 
 OUT = bin/libuthread.a

@@ -9,6 +9,7 @@
 #include <setjmp.h>
 #include <errno.h>
 #include <assert.h>
+#include <time.h>
 
 #include "gt_include.h"
 /**********************************************************************/
@@ -31,7 +32,7 @@ static int uthread_init(uthread_struct_t *u_new);
 /* uthread creation */
 #define UTHREAD_DEFAULT_SSIZE (16 * 1024)
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid);
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int scheduler_strategy, int weight);
 
 /**********************************************************************/
 /** DEFNITIONS **/
@@ -138,6 +139,9 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			gt_spin_lock(&(kthread_runq->kthread_runqlock));
 			kthread_runq->kthread_runqlock.holder = 0x01;
 			TAILQ_INSERT_TAIL(kthread_zhead, u_obj, uthread_runq);
+
+			// write stats
+
 			gt_spin_unlock(&(kthread_runq->kthread_runqlock));
 		
 			{
@@ -151,6 +155,25 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		{
 			/* XXX: Apply uthread_group_penalty before insertion */
 			u_obj->uthread_state = UTHREAD_RUNNABLE;
+
+			if (u_obj->sched_strategy == UTHREAD_CREDIT) {
+				// DO CREDIT SCHEDULER LOGIC!!
+				struct timeval now;
+				gettimeofday(&now, NULL);
+				long runtime_ms = ((now.tv_sec - u_obj->sched_credits.timeslice_start.tv_sec) * 1000000L + now.tv_usec) - (u_obj->sched_credits.timeslice_start.tv_usec);
+				
+				if (runtime_ms >= 10000) { // burn
+					fprintf(stderr, "burning %d:%d\n", (int) u_obj->uthread_gid, (int) u_obj->uthread_tid);
+					u_obj->sched_credits.credits_left -= 25;
+					if (u_obj->sched_credits.credits_left < 0) u_obj->sched_credits.credits_left = 0;
+					u_obj->uthread_priority = u_obj->sched_credits.credits_left > 0 ? 0 : 1;
+					
+					u_obj->sched_credits.timeslice_start = now;
+				}
+
+				fprintf(stderr, "scheduled %d:%d - %ld us %d credits\n", (int) u_obj->uthread_gid, (int) u_obj->uthread_tid, runtime_ms, u_obj->sched_credits.credits_left);
+			}
+
 			add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
 			/* XXX: Save the context (signal mask not saved) */
 			if(sigsetjmp(u_obj->uthread_env, 0))
@@ -185,6 +208,7 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 	/* Re-install the scheduling signal handlers */
 	kthread_install_sighandler(SIGVTALRM, k_ctx->kthread_sched_timer);
 	kthread_install_sighandler(SIGUSR1, k_ctx->kthread_sched_relay);
+
 	/* Jump to the selected uthread context */
 	siglongjmp(u_obj->uthread_env, 1);
 
@@ -230,7 +254,7 @@ static void uthread_context_func(int signo)
 
 extern kthread_runqueue_t *ksched_find_target(uthread_struct_t *);
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid)
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int scheduler_strategy, int weight)
 {
 	kthread_runqueue_t *kthread_runq;
 	uthread_struct_t *u_new;
@@ -251,6 +275,14 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	u_new->uthread_gid = u_gid;
 	u_new->uthread_func = u_func;
 	u_new->uthread_arg = u_arg;
+
+	gettimeofday(&u_new->sched_credits.timeslice_start, NULL);
+
+	u_new->sched_strategy = scheduler_strategy;
+	if (u_new->sched_strategy == UTHREAD_CREDIT) {
+		
+		calcPriority(u_new);
+	}
 
 	/* Allocate new stack for uthread */
 	u_new->uthread_stack.ss_flags = 0; /* Stack enabled for signal handling */
