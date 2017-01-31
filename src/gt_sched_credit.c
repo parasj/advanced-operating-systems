@@ -1,18 +1,42 @@
 #include <gt_include.h>
 
-int weight2credits(uthread_struct_t *ut) {
-	int weight = ut->sched_weight;
-	int allocations[] = {0, 25, 50, 75, 100};
-	assert(weight <= 4);
-	assert(weight >= 1);
+/*** Utils forward defs ***/
 
-	return allocations[weight];
-
-	// u_new->sched_weight = (weight > 4) ? 4 : (weight < 1) ? 1 : weight; // clamp weights
-	// u_new->sched_credits.credits_left = allocations[u_new->sched_weight - 1];
+int weight2credits(int weight) {
+	float scaled_weight = weight / 256.0; // default_weight
+	float clamped_weight = (scaled_weight > 4) ? 4 : (scaled_weight < 1) ? 1 : scaled_weight;
+	return (int) (clamped_weight * 30.0); // default_credits
 }
 
-int calc_priority(uthread_struct_t *ut) {
-	ut->uthread_priority = u_new->sched_credits.credits_left > 0 ? 0 : 1;
-	return ut->uthread_priority;
+void calc_priority(uthread_struct_t *ut) {
+	ut->uthread_priority = ut->sched_credits.credits_left > 0 ? SCHED_CREDIT_UNDER : SCHED_CREDIT_OVER;
+}
+
+/*** Credit API ***/
+
+void grant_credits(uthread_struct_t *ut) {
+	int credits_to_grant = weight2credits(ut->sched_weight);
+	assert(ut->credits_left < credits_to_grant);
+
+	ut->sched_credits.credits_left += credits_to_grant;
+	calc_priority(ut);
+}
+
+void burn_credits(uthread_struct_t *ut) {
+	int credits_to_burn = ut->runtime_owed;
+	ut->runtime_owed = 0;
+	ut->sched_credits.credits_left -= credits_to_burn;
+	calc_priority(ut);
+}
+
+
+/*** Create/Destroy uthread_t ***/
+void sched_credit_thread_oninit(uthread_struct_t *ut) {
+	fprintf(stdout, "sched_credit_thread_oninit g%dt%d\n", uthread_gid, uthread_tid);
+	grant_credits(u_new);
+}
+
+void sched_credit_thread_onexit(uthread_struct_t *ut) {
+	// write stats to file
+	fprintf(stdout, "sched_credit_thread_onexit g%dt%d\n", uthread_gid, uthread_tid);
 }

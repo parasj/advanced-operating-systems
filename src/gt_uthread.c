@@ -140,7 +140,10 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			kthread_runq->kthread_runqlock.holder = 0x01;
 			TAILQ_INSERT_TAIL(kthread_zhead, u_obj, uthread_runq);
 
-			// write stats
+			// cleanup and write stats
+			if (u_obj->sched_strategy == UTHREAD_CREDIT)
+				sched_credit_thread_onexit(u_obj);
+			timekeeper_destroy_uthread(&u_obj->t);
 
 			gt_spin_unlock(&(kthread_runq->kthread_runqlock));
 		
@@ -155,25 +158,6 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		{
 			/* XXX: Apply uthread_group_penalty before insertion */
 			u_obj->uthread_state = UTHREAD_RUNNABLE;
-
-			if (u_obj->sched_strategy == UTHREAD_CREDIT) {
-				// DO CREDIT SCHEDULER LOGIC!!
-				struct timeval now;
-				gettimeofday(&now, NULL);
-				long runtime_ms = ((now.tv_sec - u_obj->sched_credits.timeslice_start.tv_sec) * 1000000L + now.tv_usec) - (u_obj->sched_credits.timeslice_start.tv_usec);
-				
-				if (runtime_ms >= 10000) { // burn
-					fprintf(stderr, "burning %d:%d\n", (int) u_obj->uthread_gid, (int) u_obj->uthread_tid);
-					u_obj->sched_credits.credits_left -= 25;
-					if (u_obj->sched_credits.credits_left < 0) u_obj->sched_credits.credits_left = 0;
-					u_obj->uthread_priority = u_obj->sched_credits.credits_left > 0 ? 0 : 1;
-					
-					u_obj->sched_credits.timeslice_start = now;
-				}
-
-				fprintf(stderr, "scheduled %d:%d - %ld us %d credits\n", (int) u_obj->uthread_gid, (int) u_obj->uthread_tid, runtime_ms, u_obj->sched_credits.credits_left);
-			}
-
 			add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
 			/* XXX: Save the context (signal mask not saved) */
 			if(sigsetjmp(u_obj->uthread_env, 0))
@@ -276,13 +260,12 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	u_new->uthread_func = u_func;
 	u_new->uthread_arg = u_arg;
 
-	gettimeofday(&u_new->sched_credits.timeslice_start, NULL);
 
-	u_new->sched_strategy = scheduler_strategy;
-	if (u_new->sched_strategy == UTHREAD_CREDIT) {
-		
-		calcPriority(u_new);
-	}
+	u_new->sched_strategy = scheduler_strategy; // set strategy
+	if (u_new->sched_strategy == UTHREAD_CREDIT) // give initial credit grant
+		sched_credit_thread_oninit(u_new);
+	timekeeper_create_uthread(&u_new->t); // init timekeeper
+
 
 	/* Allocate new stack for uthread */
 	u_new->uthread_stack.ss_flags = 0; /* Stack enabled for signal handling */
