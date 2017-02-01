@@ -174,7 +174,7 @@ int main()
 		uarg->start_col = (uarg->gid * PER_GROUP_COLS);
 #endif
 
-		uthread_create(&utids[inx], uthread_mulmat, uarg, uarg->gid, UTHREAD_CREDIT, 128 * inx);
+		uthread_create(&utids[inx], uthread_mulmat, uarg, uarg->gid, UTHREAD_CREDIT, inx % 4 + 1);
 	}
 
 	gtthread_app_exit();

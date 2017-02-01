@@ -32,15 +32,18 @@ void timekeeper_create_uthread(timekeeper_t *t) {
 void timekeeper_start_uthread(timekeeper_t *t) {
 	assert(t->last_start == 0);
     t->last_start = getmicroseconds();
+    t->last_runtime = 0;
 }
 
 void timekeeper_stop_uthread(timekeeper_t *t) {
     assert(t->last_start != 0);
 	microtime_t delta = getmicroseconds() - t->last_start;
     t->total_runtime += delta;
+    t->last_runtime = delta;
     t->last_start = 0;
-
-    printf("%llu us CPU time elapsed in thread\n", delta);
+#if GTTHREAD_LOG
+    fprintf(stderr, "%llu us CPU time elapsed in thread\n", delta);
+#endif
 }
 
 void timekeeper_destroy_uthread(timekeeper_t *t) {
@@ -49,7 +52,9 @@ void timekeeper_destroy_uthread(timekeeper_t *t) {
     
     char str[1000] = {0};
     timekeeper_csv(str, t);
-    fprintf(stdout, "%s\n", str);
+#if GTTHREAD_LOG
+    fprintf(stderr, "%s\n", str);
+#endif
 }
 
 void timekeeper_csv(char *str, timekeeper_t *t) {

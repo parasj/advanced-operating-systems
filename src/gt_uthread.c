@@ -163,7 +163,9 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			 ***/
 			
 			/* register uthread done */
-			printf("uthread_schedule preempt g%dt%d (strat = %d)\n", u_obj->uthread_gid, u_obj->uthread_tid, u_obj->sched_strategy);
+#if GTTHREAD_LOG
+	fprintf(stderr, "uthread_schedule preempt g%dt%d (strat = %d)\n", u_obj->uthread_gid, u_obj->uthread_tid, u_obj->sched_strategy);
+#endif
 			timekeeper_stop_uthread(&u_obj->t);
 
 
@@ -206,14 +208,14 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		exit(0);
 	}
 
-	/* register uthread start */
-	timekeeper_start_uthread(&u_obj->t);
-
 	u_obj->uthread_state = UTHREAD_RUNNING;
 	
 	/* Re-install the scheduling signal handlers */
 	kthread_install_sighandler(SIGVTALRM, k_ctx->kthread_sched_timer);
 	kthread_install_sighandler(SIGUSR1, k_ctx->kthread_sched_relay);
+
+	/* register uthread start */
+	timekeeper_start_uthread(&u_obj->t);
 
 	/* Jump to the selected uthread context */
 	siglongjmp(u_obj->uthread_env, 1);
@@ -232,7 +234,7 @@ static void uthread_context_func(int signo)
 
 	kthread_runq = &(kthread_cpu_map[kthread_apic_id()]->krunqueue);
 
-	printf("..... uthread_context_func .....\n");
+	// printf("..... uthread_context_func .....\n");
 	/* kthread->cur_uthread points to newly created uthread */
 	if(!sigsetjmp(kthread_runq->cur_uthread->uthread_env,0))
 	{
@@ -252,7 +254,9 @@ static void uthread_context_func(int signo)
 	cur_uthread->uthread_state = UTHREAD_DONE;
 
 	/* register uthread done */
-	printf("uthread_context_func done g%dt%d\n", cur_uthread->uthread_gid, cur_uthread->uthread_tid);
+#if GTTHREAD_LOG
+	fprintf(stderr, "uthread_context_func done g%dt%d\n", cur_uthread->uthread_gid, cur_uthread->uthread_tid);
+#endif
 	timekeeper_stop_uthread(&cur_uthread->t);
 
 	uthread_schedule(&sched_find_best_uthread);
@@ -290,7 +294,6 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	u_new->sched_strategy = scheduler_strategy; // set strategy
 	if (u_new->sched_strategy == UTHREAD_CREDIT) // give initial credit grant
 		sched_credit_thread_oninit(u_new);
-	timekeeper_create_uthread(&u_new->t); // init timekeeper
 
 
 	/* Allocate new stack for uthread */
@@ -316,6 +319,9 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	kthread_runq = ksched_find_target(u_new);
 
 	*u_tid = u_new->uthread_tid;
+
+	timekeeper_create_uthread(&u_new->t); // init timekeeper
+
 	/* Queue the uthread for target-cpu. Let target-cpu take care of initialization. */
 	add_to_runqueue(kthread_runq->active_runq, &(kthread_runq->kthread_runqlock), u_new);
 

@@ -9,6 +9,7 @@ typedef struct timekeeper
     microtime_t time_destroyed;
 
     microtime_t last_start;
+    microtime_t last_runtime;
 
 	microtime_t total_runtime;
 } timekeeper_t;
