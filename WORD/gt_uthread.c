@@ -32,11 +32,15 @@ static int uthread_init(uthread_struct_t *u_new);
 /* uthread creation */
 #define UTHREAD_DEFAULT_SSIZE (16 * 1024)
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int scheduler_strategy, int weight);
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int credits, int scheduler_mode);
+static void print_stats_in_file(uthread_struct_t*, kthread_runqueue_t*);
 
 /**********************************************************************/
 /** DEFNITIONS **/
 /**********************************************************************/
+unsigned int sysctl_sched_latency = 20000000ULL;
+unsigned int sysctl_sched_min_granularity = 4000000ULL;
+static unsigned int sched_nr_latency = 5;
 
 /**********************************************************************/
 /* uthread scheduling */
@@ -138,15 +142,16 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			uthread_head_t * kthread_zhead = &(kthread_runq->zombie_uthreads);
 			gt_spin_lock(&(kthread_runq->kthread_runqlock));
 			kthread_runq->kthread_runqlock.holder = 0x01;
-			TAILQ_INSERT_TAIL(kthread_zhead, u_obj, uthread_runq);
-
-			// cleanup and write stats
-			if (u_obj->sched_strategy == UTHREAD_CREDIT)
-				sched_credit_thread_onexit(u_obj);
-			timekeeper_destroy_uthread(&u_obj->t);
+			TAILQ_INSERT_TAIL(kthread_zhead, u_obj, uthread_runq);		//?
+			// GETTIME
+			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &u_obj->end_time);
+			u_obj->running_time += (u_obj->end_time.tv_nsec - u_obj->start_time.tv_nsec)/1000 + (u_obj->end_time.tv_sec - u_obj->start_time.tv_sec)*1000000;
+			u_obj->life_time += (u_obj->end_time.tv_nsec - u_obj->create_time.tv_nsec)/1000 + (u_obj->end_time.tv_sec - u_obj->create_time.tv_sec)*1000000;
+			print_stats_in_file(u_obj, kthread_runq);
 
 			gt_spin_unlock(&(kthread_runq->kthread_runqlock));
 		
+			
 			{
 				ksched_shared_info_t *ksched_info = &ksched_shared_info;	
 				gt_spin_lock(&ksched_info->ksched_lock);
@@ -158,26 +163,34 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		{
 			/* XXX: Apply uthread_group_penalty before insertion */
 			u_obj->uthread_state = UTHREAD_RUNNABLE;
+			// GETTIME
+			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &u_obj->end_time);
 
-			/***
-			 * scheduler logic!
-			 ***/
-			
-			/* register uthread done */
-			printf("uthread_context_func pre-empting g%dt%d\n", uthread_gid, uthread_tid);
-			timekeeper_stop_uthread(&u_obj->t);
-
-			if (u_obj->sched_strategy == UTHREAD_CREDIT) {
-				int uthread_status = credit_accounting(u_obj);
-				if (uthread_status == SCHED_CREDIT_UNDER) { // put in active runqueue
-					add_to_runqueue(kthread_runq->active_runq, &(kthread_runq->kthread_runqlock), u_obj);
-				} else { // put in expired runqueue
-					add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
-				}
-			} else if (u_obj->sched_strategy == UTHREAD_O1) {
-				add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
+			if (u_obj->scheduler_mode == 1){
+			// BURN CREDITS
+			u_obj->now = u_obj->running_time ;
+			if (u_obj->now - u_obj->last_time >= CREDITS_BURN_TSLICE){
+				burn_credits(u_obj) ;
+				u_obj->last_time = u_obj->now ;
+				printf("uthread %d CREDITS: %d\n", u_obj->uthread_tid, u_obj->credits);
 			}
+			u_obj->uthread_priority = get_priority(u_obj) ;
 
+			// UPDATE CREDITS
+			if (u_obj->now - u_obj->last_time >= YIELD_TSLICE){
+				uthread_schedule(&sched_find_best_uthread);
+			}
+			
+		    }
+		    u_obj->cycle_count ++ ;
+		    if(u_obj->uthread_tid == 1){
+		    	printf("CYCLE_COUNT_1%d\n",u_obj->cycle_count );
+		    }
+		   
+			u_obj->running_time += (u_obj->end_time.tv_nsec - u_obj->start_time.tv_nsec)/1000 + (u_obj->end_time.tv_sec - u_obj->start_time.tv_sec)*1000000;
+ 			
+
+			add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
 			/* XXX: Save the context (signal mask not saved) */
 			if(sigsetjmp(u_obj->uthread_env, 0))
 				return;
@@ -206,16 +219,14 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		exit(0);
 	}
 
-	/* register uthread start */
-	timekeeper_start_uthread(&u_obj->t)
-
 	u_obj->uthread_state = UTHREAD_RUNNING;
 	
 	/* Re-install the scheduling signal handlers */
 	kthread_install_sighandler(SIGVTALRM, k_ctx->kthread_sched_timer);
 	kthread_install_sighandler(SIGUSR1, k_ctx->kthread_sched_relay);
-
 	/* Jump to the selected uthread context */
+	// GETTIME
+	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &u_obj->start_time);
 	siglongjmp(u_obj->uthread_env, 1);
 
 	return;
@@ -232,7 +243,7 @@ static void uthread_context_func(int signo)
 
 	kthread_runq = &(kthread_cpu_map[kthread_apic_id()]->krunqueue);
 
-	printf("..... uthread_context_func .....\n");
+	// printf("..... uthread_context_func .....\n");
 	/* kthread->cur_uthread points to newly created uthread */
 	if(!sigsetjmp(kthread_runq->cur_uthread->uthread_env,0))
 	{
@@ -251,10 +262,6 @@ static void uthread_context_func(int signo)
 	cur_uthread->uthread_func(cur_uthread->uthread_arg);
 	cur_uthread->uthread_state = UTHREAD_DONE;
 
-	/* register uthread done */
-	printf("uthread_context_func done g%dt%d\n", uthread_gid, uthread_tid);
-	timekeeper_stop_uthread(&cur_uthread->t)
-
 	uthread_schedule(&sched_find_best_uthread);
 	return;
 }
@@ -264,7 +271,7 @@ static void uthread_context_func(int signo)
 
 extern kthread_runqueue_t *ksched_find_target(uthread_struct_t *);
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int scheduler_strategy, int weight)
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int credits, int scheduler_mode)
 {
 	kthread_runqueue_t *kthread_runq;
 	uthread_struct_t *u_new;
@@ -281,17 +288,21 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	}
 
 	u_new->uthread_state = UTHREAD_INIT;
-	u_new->uthread_priority = DEFAULT_UTHREAD_PRIORITY;
+	// u_new->uthread_priority = DEFAULT_UTHREAD_PRIORITY;
 	u_new->uthread_gid = u_gid;
 	u_new->uthread_func = u_func;
 	u_new->uthread_arg = u_arg;
+	u_new->credits = credits;
+	u_new->scheduler_mode = scheduler_mode ;
+	if (u_new->scheduler_mode ==1){
+		u_new->uthread_priority = get_priority(u_new) ;
+	}else{
+		u_new->uthread_priority = DEFAULT_UTHREAD_PRIORITY ;
+	}
 
-
-	u_new->sched_strategy = scheduler_strategy; // set strategy
-	if (u_new->sched_strategy == UTHREAD_CREDIT) // give initial credit grant
-		sched_credit_thread_oninit(u_new);
-	timekeeper_create_uthread(&u_new->t); // init timekeeper
-
+	u_new->last_time = 0 ;
+	u_new->last_time_over = 0 ;
+	u_new->cycle_count =0 ;
 
 	/* Allocate new stack for uthread */
 	u_new->uthread_stack.ss_flags = 0; /* Stack enabled for signal handling */
@@ -317,6 +328,7 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 
 	*u_tid = u_new->uthread_tid;
 	/* Queue the uthread for target-cpu. Let target-cpu take care of initialization. */
+	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &u_new->create_time);
 	add_to_runqueue(kthread_runq->active_runq, &(kthread_runq->kthread_runqlock), u_new);
 
 
@@ -399,3 +411,22 @@ static int func(void *arg)
 	return 0;
 }
 #endif
+static void print_stats_in_file(uthread_struct_t* u_obj, kthread_runqueue_t* kthread_runq){
+	if(u_obj->uthread_tid < 32)
+	{
+		stats.running_time[u_obj->uthread_tid] = u_obj->running_time;
+		stats.life_time[u_obj->uthread_tid] = u_obj->life_time;
+	}
+    else
+	{
+		stats.running_time[u_obj->uthread_tid] = u_obj->running_time;
+		stats.life_time[u_obj->uthread_tid] = u_obj->life_time;
+	}
+}
+
+extern void yield()
+{
+      
+	uthread_schedule(&sched_find_best_uthread);
+}
+

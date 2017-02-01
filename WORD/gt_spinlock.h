@@ -11,5 +11,7 @@ typedef struct __gt_spinlock
 extern int gt_spinlock_init(gt_spinlock_t* spinlock);
 extern int gt_spin_lock(gt_spinlock_t* spinlock);
 extern int gt_spin_unlock(gt_spinlock_t *spinlock);
+extern int gt_spin_lock_defined(gt_spinlock_t* spinlock) ;
+
 
 #endif

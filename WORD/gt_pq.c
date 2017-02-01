@@ -145,7 +145,7 @@ extern void kthread_init_runqueue(kthread_runqueue_t *kthread_runq)
 	return;
 }
 
-#if GTTHREAD_LOG
+#if 0
 static void print_runq_stats(runqueue_t *runq, char *runq_str)
 {
 	int inx;
@@ -214,7 +214,7 @@ extern uthread_struct_t *sched_find_best_uthread(kthread_runqueue_t *kthread_run
 	__rem_from_runqueue(runq, u_obj);
 
 	gt_spin_unlock(&(kthread_runq->kthread_runqlock));
-#if GTTHREAD_LOG
+#if 0
 	printf("cpu(%d) : sched best uthread(id:%d, group:%d)\n", u_obj->cpu_id, u_obj->uthread_tid, u_obj->uthread_gid);
 #endif
 	return(u_obj);

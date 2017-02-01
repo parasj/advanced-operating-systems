@@ -1,6 +1,9 @@
 #ifndef __GT_UTHREAD_H
 #define __GT_UTHREAD_H
-
+#include <time.h>
+#include <setjmp.h>
+#include <ucontext.h>
+#include <signal.h>
 /* User-level thread implementation (using alternate signal stacks) */
 
 typedef unsigned int uthread_t;
@@ -13,9 +16,8 @@ typedef unsigned int uthread_group_t;
 #define UTHREAD_CANCELLED 0x08
 #define UTHREAD_DONE 0x10
 
-typedef unsigned char sched_strategy_t;
-#define UTHREAD_O1 0x01
-#define UTHREAD_CREDIT 0x02
+#define CREDITS_BURN_TSLICE 10000  // us
+#define YIELD_TSLICE 30000  // us
 
 /* uthread struct : has all the uthread context info */
 typedef struct uthread_struct
@@ -35,13 +37,20 @@ typedef struct uthread_struct
 	int reserved1;
 	int reserved2;
 	int reserved3;
+
+	int scheduler_mode ;  // 1 = credit scheduler, 0 = priority scheduler
+
+	int credits;				
+	long running_time;
+	long life_time;
+	long last_time ;
+	long now ;
+	long last_time_over ;
+	long now_over ;
+	struct timespec start_time, end_time, create_time;
+
+	int cycle_count ;
 	
-	sched_strategy_t sched_strategy; /* UTHREAD_O1, UTHREADkthread_sched_relay_CREDIT */
-	int sched_weight; /* user weight; 256 is the default weight */
-	int remaining_credits; /* credit allocation, proportional to weight where a thread with weight 256 is granted 25 credits */
-
-	uthread_timekeeper_struct_t t; /* timekeeper */
-
 	sigjmp_buf uthread_env; /* 156 bytes : save user-level thread context*/
 	stack_t uthread_stack; /* 12 bytes : user-level thread stack */
 	TAILQ_ENTRY(uthread_struct) uthread_runq;
@@ -49,4 +58,12 @@ typedef struct uthread_struct
 
 struct __kthread_runqueue;
 extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(struct __kthread_runqueue *));
+
+typedef struct uthread_stats_holder {
+	long running_time[128];
+	long life_time[128];
+} final_uthread_stats;
+final_uthread_stats stats;
+
+extern void yield();
 #endif
