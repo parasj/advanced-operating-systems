@@ -4,9 +4,9 @@
 #define SCHED_CREDIT_UNDER 0
 #define SCHED_CREDIT_OVER 1
 
-#define SCHED_CREDIT_BURN_PER_TIMESTEP 10
+#define SCHED_CREDIT_BURN_PER_TIMESTEP 30
 
-extern void credit_accounting(uthread_struct_t *ut);
+extern int credit_accounting(uthread_struct_t *ut);
 extern void sched_credit_thread_oninit(uthread_struct_t *ut);
 extern void sched_credit_thread_onexit(uthread_struct_t *ut);
 

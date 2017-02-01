@@ -13,7 +13,7 @@
 #include "gt_include.h"
 
 
-#define ROWS 512
+#define ROWS 1024
 #define COLS ROWS
 #define SIZE COLS
 
@@ -21,7 +21,7 @@
 #define NUM_GROUPS NUM_CPUS
 #define PER_GROUP_COLS (SIZE/NUM_GROUPS)
 
-#define NUM_THREADS 32
+#define NUM_THREADS 128
 #define PER_THREAD_ROWS (SIZE/NUM_THREADS)
 
 
@@ -134,7 +134,7 @@ matrix_t A, B, C;
 
 static void init_matrices()
 {
-	generate_matrix(&A, 1);
+	generate_matrix(&A, 2);
 	generate_matrix(&B, 1);
 	generate_matrix(&C, 0);
 
@@ -174,12 +174,21 @@ int main()
 		uarg->start_col = (uarg->gid * PER_GROUP_COLS);
 #endif
 
-		uthread_create(&utids[inx], uthread_mulmat, uarg, uarg->gid, UTHREAD_CREDIT, 0);
+		uthread_create(&utids[inx], uthread_mulmat, uarg, uarg->gid, UTHREAD_CREDIT, 128 * inx);
 	}
 
 	gtthread_app_exit();
 
+	// fprintf(stderr, "\n\n********************************\n");
+	// print_matrix(&A);
+	// fprintf(stderr, "********************************\n\n");
+
+	// fprintf(stderr, "\n\n********************************\n");
+	// print_matrix(&B);
+	// fprintf(stderr, "********************************\n\n");
+
+	// fprintf(stderr, "\n\n********************************\n");
 	// print_matrix(&C);
-	// fprintf(stderr, "********************************");
+	// fprintf(stderr, "********************************\n\n");
 	return(0);
 }

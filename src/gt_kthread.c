@@ -199,8 +199,8 @@ static void ksched_cosched(int signal)
 
 	kthread_context_t *cur_k_ctx;
 
-	// kthread_block_signal(SIGVTALRM);
-	// kthread_block_signal(SIGUSR1);
+	kthread_block_signal(SIGVTALRM);
+	kthread_block_signal(SIGUSR1);
 
 	/* This virtual processor (thread) was not
 	 * picked by kernel for vtalrm signal.
@@ -215,8 +215,8 @@ static void ksched_cosched(int signal)
 	uthread_schedule(&sched_find_best_uthread);
 #endif
 
-	// kthread_unblock_signal(SIGVTALRM);
-	// kthread_unblock_signal(SIGUSR1);
+	kthread_unblock_signal(SIGVTALRM);
+	kthread_unblock_signal(SIGUSR1);
 	return;
 }
 
@@ -238,8 +238,8 @@ static void ksched_priority(int signo)
 	pid_t pid;
 	int inx;
 
-	// kthread_block_signal(SIGVTALRM);
-	// kthread_block_signal(SIGUSR1);
+	kthread_block_signal(SIGVTALRM);
+	kthread_block_signal(SIGUSR1);
 
 	ksched_announce_cosched_group();
 
@@ -262,8 +262,8 @@ static void ksched_priority(int signo)
 
 	uthread_schedule(&sched_find_best_uthread);
 
-	// kthread_unblock_signal(SIGVTALRM);
-	// kthread_unblock_signal(SIGUSR1);
+	kthread_unblock_signal(SIGVTALRM);
+	kthread_unblock_signal(SIGUSR1);
 	return;
 }
 

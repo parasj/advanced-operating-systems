@@ -9,10 +9,11 @@
 #include "gt_bitops.h"
 
 #include "gt_uthread.h"
-#include "gt_pq.h"
-#include "gt_kthread.h"
 
 #include "gt_sched_credit.h"
+
+#include "gt_pq.h"
+#include "gt_kthread.h"
 
 #define GTTHREAD_LOG 1
 

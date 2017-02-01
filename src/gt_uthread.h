@@ -40,7 +40,7 @@ typedef struct uthread_struct
 	int sched_weight; /* user weight; 256 is the default weight */
 	int remaining_credits; /* credit allocation, proportional to weight where a thread with weight 256 is granted 25 credits */
 
-	uthread_timekeeper_struct_t t; /* timekeeper */
+	timekeeper_t t; /* timekeeper */
 
 	sigjmp_buf uthread_env; /* 156 bytes : save user-level thread context*/
 	stack_t uthread_stack; /* 12 bytes : user-level thread stack */

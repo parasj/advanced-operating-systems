@@ -9,7 +9,6 @@
 #include <setjmp.h>
 #include <errno.h>
 #include <assert.h>
-#include <time.h>
 
 #include "gt_include.h"
 /**********************************************************************/
@@ -116,8 +115,8 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 	uthread_struct_t *u_obj;
 
 	/* Signals used for cpu_thread scheduling */
-	// kthread_block_signal(SIGVTALRM);
-	// kthread_block_signal(SIGUSR1);
+	kthread_block_signal(SIGVTALRM);
+	kthread_block_signal(SIGUSR1);
 
 #if 0
 	fprintf(stderr, "uthread_schedule invoked !!\n");
@@ -164,8 +163,9 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			 ***/
 			
 			/* register uthread done */
-			printf("uthread_context_func pre-empting g%dt%d\n", uthread_gid, uthread_tid);
+			printf("uthread_schedule preempt g%dt%d (strat = %d)\n", u_obj->uthread_gid, u_obj->uthread_tid, u_obj->sched_strategy);
 			timekeeper_stop_uthread(&u_obj->t);
+
 
 			if (u_obj->sched_strategy == UTHREAD_CREDIT) {
 				int uthread_status = credit_accounting(u_obj);
@@ -207,7 +207,7 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 	}
 
 	/* register uthread start */
-	timekeeper_start_uthread(&u_obj->t)
+	timekeeper_start_uthread(&u_obj->t);
 
 	u_obj->uthread_state = UTHREAD_RUNNING;
 	
@@ -252,8 +252,8 @@ static void uthread_context_func(int signo)
 	cur_uthread->uthread_state = UTHREAD_DONE;
 
 	/* register uthread done */
-	printf("uthread_context_func done g%dt%d\n", uthread_gid, uthread_tid);
-	timekeeper_stop_uthread(&cur_uthread->t)
+	printf("uthread_context_func done g%dt%d\n", cur_uthread->uthread_gid, cur_uthread->uthread_tid);
+	timekeeper_stop_uthread(&cur_uthread->t);
 
 	uthread_schedule(&sched_find_best_uthread);
 	return;
@@ -286,7 +286,7 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	u_new->uthread_func = u_func;
 	u_new->uthread_arg = u_arg;
 
-
+	u_new->sched_weight = weight;
 	u_new->sched_strategy = scheduler_strategy; // set strategy
 	if (u_new->sched_strategy == UTHREAD_CREDIT) // give initial credit grant
 		sched_credit_thread_oninit(u_new);
