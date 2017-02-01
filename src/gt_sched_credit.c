@@ -9,34 +9,42 @@ int weight2credits(int weight) {
 }
 
 void calc_priority(uthread_struct_t *ut) {
-	ut->uthread_priority = ut->sched_credits.credits_left > 0 ? SCHED_CREDIT_UNDER : SCHED_CREDIT_OVER;
+	ut->uthread_priority = ut->remaining_credits > 0 ? SCHED_CREDIT_UNDER : SCHED_CREDIT_OVER;
 }
 
 /*** Credit API ***/
 
 void grant_credits(uthread_struct_t *ut) {
 	int credits_to_grant = weight2credits(ut->sched_weight);
-	assert(ut->credits_left < credits_to_grant);
-
-	ut->sched_credits.credits_left += credits_to_grant;
-	calc_priority(ut);
+	assert(ut->remaining_credits < credits_to_grant);
+	ut->remaining_credits = credits_to_grant;
 }
 
 void burn_credits(uthread_struct_t *ut) {
-	int credits_to_burn = ut->runtime_owed;
-	ut->runtime_owed = 0;
-	ut->sched_credits.credits_left -= credits_to_burn;
-	calc_priority(ut);
+	ut->remaining_credits -= SCHED_CREDIT_BURN_PER_TIMESTEP;
 }
 
+int credit_accounting(uthread_struct_t *ut) {
+	if (ut->remaining_credits >= SCHED_CREDIT_BURN_PER_TIMESTEP) {
+		burn_credits(ut);
+		calc_priority(ut);
+		return SCHED_CREDIT_UNDER;
+	} else {
+		grant_credits(ut);
+		calc_priority(ut);
+		return SCHED_CREDIT_OVER;
+	}
+}
 
 /*** Create/Destroy uthread_t ***/
 void sched_credit_thread_oninit(uthread_struct_t *ut) {
 	fprintf(stdout, "sched_credit_thread_oninit g%dt%d\n", uthread_gid, uthread_tid);
 	grant_credits(u_new);
+	calc_priority(ut);
 }
 
 void sched_credit_thread_onexit(uthread_struct_t *ut) {
 	// write stats to file
+	// todo
 	fprintf(stdout, "sched_credit_thread_onexit g%dt%d\n", uthread_gid, uthread_tid);
 }

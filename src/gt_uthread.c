@@ -158,7 +158,26 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		{
 			/* XXX: Apply uthread_group_penalty before insertion */
 			u_obj->uthread_state = UTHREAD_RUNNABLE;
-			add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
+
+			/***
+			 * scheduler logic!
+			 ***/
+			
+			/* register uthread done */
+			printf("uthread_context_func pre-empting g%dt%d\n", uthread_gid, uthread_tid);
+			timekeeper_stop_uthread(&u_obj->t);
+
+			if (u_obj->sched_strategy == UTHREAD_CREDIT) {
+				int uthread_status = credit_accounting(u_obj);
+				if (uthread_status == SCHED_CREDIT_UNDER) { // put in active runqueue
+					add_to_runqueue(kthread_runq->active_runq, &(kthread_runq->kthread_runqlock), u_obj);
+				} else { // put in expired runqueue
+					add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
+				}
+			} else if (u_obj->sched_strategy == UTHREAD_O1) {
+				add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
+			}
+
 			/* XXX: Save the context (signal mask not saved) */
 			if(sigsetjmp(u_obj->uthread_env, 0))
 				return;
@@ -186,6 +205,9 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		fprintf(stderr, "uthread_init failed on kthread(%d)\n", k_ctx->cpuid);
 		exit(0);
 	}
+
+	/* register uthread start */
+	timekeeper_start_uthread(&u_obj->t)
 
 	u_obj->uthread_state = UTHREAD_RUNNING;
 	
@@ -228,6 +250,10 @@ static void uthread_context_func(int signo)
 	/* Execute the uthread task */
 	cur_uthread->uthread_func(cur_uthread->uthread_arg);
 	cur_uthread->uthread_state = UTHREAD_DONE;
+
+	/* register uthread done */
+	printf("uthread_context_func done g%dt%d\n", uthread_gid, uthread_tid);
+	timekeeper_stop_uthread(&cur_uthread->t)
 
 	uthread_schedule(&sched_find_best_uthread);
 	return;

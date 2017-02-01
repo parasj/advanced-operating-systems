@@ -23,9 +23,11 @@ void timekeeper_start_uthread(timekeeper_t *t) {
 
 void timekeeper_stop_uthread(timekeeper_t *t) {
     assert(t->last_start != NULL);
-	microtime_t now = getmicroseconds();
-    t->total_runtime += now - t->last_start;
+	microtime_t delta = getmicroseconds() - t->last_start;
+    t->total_runtime += delta;
     t->last_start = NULL;
+
+    printf("%llu us CPU time elapsed\n", delta);
 }
 
 void timekeeper_destroy_uthread(timekeeper_t *t) {
