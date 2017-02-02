@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <linux/unistd.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
@@ -12,27 +13,14 @@
 
 #include "gt_include.h"
 
-
-#define ROWS 1024
-#define COLS ROWS
-#define SIZE COLS
-
 #define NUM_CPUS 2
 #define NUM_GROUPS NUM_CPUS
-#define PER_GROUP_COLS (SIZE/NUM_GROUPS)
 
-#define NUM_THREADS 128
-#define PER_THREAD_ROWS (SIZE/NUM_THREADS)
-
-
-/* A[SIZE][SIZE] X B[SIZE][SIZE] = C[SIZE][SIZE]
- * Let T(g, t) be thread 't' in group 'g'. 
- * T(g, t) is responsible for multiplication : 
- * A(rows)[(t-1)*SIZE -> (t*SIZE - 1)] X B(cols)[(g-1)*SIZE -> (g*SIZE - 1)] */
+#define NTRIALS (4*4)
 
 typedef struct matrix
 {
-	int m[SIZE][SIZE];
+	int m[256][256]; // MAX SIZE
 
 	int rows;
 	int cols;
@@ -47,19 +35,15 @@ typedef struct __uthread_arg
 
 	unsigned int tid;
 	unsigned int gid;
-	int start_row; /* start_row -> (start_row + PER_THREAD_ROWS) */
-	int start_col; /* start_col -> (start_col + PER_GROUP_COLS) */
-	
 }uthread_arg_t;
 	
 struct timeval tv1;
 
-static void generate_matrix(matrix_t *mat, int val)
+static void generate_matrix(matrix_t *mat, int size, int val)
 {
-
 	int i,j;
-	mat->rows = SIZE;
-	mat->cols = SIZE;
+	mat->rows = size;
+	mat->cols = size;
 	for(i = 0; i < mat->rows;i++)
 		for( j = 0; j < mat->cols; j++ )
 		{
@@ -68,6 +52,7 @@ static void generate_matrix(matrix_t *mat, int val)
 	return;
 }
 
+#if 0
 static void print_matrix(matrix_t *mat)
 {
 	int i, j;
@@ -85,8 +70,6 @@ static void print_matrix(matrix_t *mat)
 static void * uthread_mulmat(void *p)
 {
 	int i, j, k;
-	int start_row, end_row;
-	int start_col, end_col;
 	unsigned int cpuid;
 	struct timeval tv2;
 
@@ -129,66 +112,72 @@ static void * uthread_mulmat(void *p)
 #undef ptr
 	return 0;
 }
+#endif
 
-matrix_t A, B, C;
-
-static void init_matrices()
-{
-	generate_matrix(&A, 2);
-	generate_matrix(&B, 1);
-	generate_matrix(&C, 0);
-
-	return;
+static void * uthread_mulmat(void *p) {
+	int i, j, k;
+	usleep(100000);
+	for(i = 0; i < ((uthread_arg_t *)p)->_A->rows; i++) {
+		for(j = 0; j < ((uthread_arg_t *)p)->_A->cols; j++)
+			for(k = 0; k < ((uthread_arg_t *)p)->_A->rows; k++)
+				((uthread_arg_t *)p)->_C->m[i][j] += ((uthread_arg_t *)p)->_A->m[i][k] * ((uthread_arg_t *)p)->_B->m[k][j];
+			if (i == 16)
+				gt_yield();
+	}
+	return 0;
 }
 
+uthread_arg_t uargs[NTRIALS];
+uthread_t utids[NTRIALS];
+matrix_t A[NTRIALS];
+matrix_t B[NTRIALS];
+matrix_t C[NTRIALS];
 
-uthread_arg_t uargs[NUM_THREADS];
-uthread_t utids[NUM_THREADS];
+static void usage(char *argv[]) {
+	fprintf(stderr, "usage: %s [0 | 1] where 0 represents the O(1) scheduler and 1 represents using the credit scheduler (default is O(1) scheduler)\n", argv[0]);
+}
 
-int main()
+int main(int argc, char *argv[])
 {
+	int scheduler, mat_size, weight, calc_tid, trialid = 0;
 	uthread_arg_t *uarg;
-	int inx;
 
+	if (argc == 2 && atoi(argv[1]) == 1) {
+		scheduler = UTHREAD_CREDIT;
+		fprintf(stderr, "scheduler strategy: UTHREAD_CREDIT\n");
+	} else if (argc == 2 && atoi(argv[1]) == 0 || argc == 1) {
+		scheduler = UTHREAD_O1;
+		fprintf(stderr, "scheduler strategy: UTHREAD_O1\n");
+	} else {
+		usage(argv);
+		exit(1);
+	}
 
 	gtthread_app_init();
 
-	init_matrices();
+	for (mat_size = 32; mat_size <= 256; mat_size <<= 1) {
+		for (weight = 1; weight <= 4; ++weight) {
+			calc_tid = mat_size * 10 + weight; // tid = {MATSIZE}{WEIGHT}, eg 321 means 32x32 matrix with weight 1
 
-	gettimeofday(&tv1,NULL);
+			generate_matrix(&A[trialid], mat_size, 2);
+			generate_matrix(&B[trialid], mat_size, 4);
+			generate_matrix(&C[trialid], mat_size, 0);
 
-	for(inx=0; inx<NUM_THREADS; inx++)
-	{
-		uarg = &uargs[inx];
-		uarg->_A = &A;
-		uarg->_B = &B;
-		uarg->_C = &C;
+			uarg = &uargs[trialid];
+			uarg->_A = &A[trialid];
+			uarg->_B = &B[trialid];
+			uarg->_C = &C[trialid];
 
-		uarg->tid = inx;
+			uarg->tid = calc_tid;
+			uarg->gid = (trialid % NUM_GROUPS); // use trialid since weight isn't necessarily uniform
 
-		uarg->gid = (inx % NUM_GROUPS);
-
-		uarg->start_row = (inx * PER_THREAD_ROWS);
-#ifdef GT_GROUP_SPLIT
-		/* Wanted to split the columns by groups !!! */
-		uarg->start_col = (uarg->gid * PER_GROUP_COLS);
-#endif
-
-		uthread_create(&utids[inx], uthread_mulmat, uarg, uarg->gid, UTHREAD_CREDIT, inx % 4 + 1);
+			uthread_create(&utids[trialid], uthread_mulmat, uarg, uarg->gid, UTHREAD_CREDIT, weight);
+			fprintf(stderr, "scheduled trial %d: %d\n", trialid, calc_tid);
+			++trialid;
+		}
 	}
 
 	gtthread_app_exit();
 
-	// fprintf(stderr, "\n\n********************************\n");
-	// print_matrix(&A);
-	// fprintf(stderr, "********************************\n\n");
-
-	// fprintf(stderr, "\n\n********************************\n");
-	// print_matrix(&B);
-	// fprintf(stderr, "********************************\n\n");
-
-	// fprintf(stderr, "\n\n********************************\n");
-	// print_matrix(&C);
-	// fprintf(stderr, "********************************\n\n");
 	return(0);
 }

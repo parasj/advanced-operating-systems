@@ -74,6 +74,7 @@ void sched_credit_thread_oninit(uthread_struct_t *ut) {
 
 void sched_credit_thread_onexit(uthread_struct_t *ut) {
 	// write stats to file
+	fprintf(stderr, "%d\t%d\t%llu\t%llu\n", ut->uthread_gid, ut->uthread_tid, ut->t.total_runtime, getmicroseconds() - ut->t.time_created);
 #if GTTHREAD_LOG
 	fprintf(stderr, "sched_credit_thread_onexit g%dt%d\n", ut->uthread_gid, ut->uthread_tid);
 #endif

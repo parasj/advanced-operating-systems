@@ -32,6 +32,7 @@ static int uthread_init(uthread_struct_t *u_new);
 #define UTHREAD_DEFAULT_SSIZE (16 * 1024)
 
 extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int scheduler_strategy, int weight);
+extern void gt_yield();
 
 /**********************************************************************/
 /** DEFNITIONS **/
@@ -333,6 +334,13 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	// kthread_unblock_signal(SIGUSR1);
 
 	return 0;
+}
+
+void gt_yield() {
+#if GTTHREAD_LOG
+	fprintf(stderr, "YIELD!\n");
+#endif
+	uthread_schedule(&sched_find_best_uthread);
 }
 
 #if 0
