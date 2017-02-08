@@ -26,7 +26,7 @@ int weight2credits(int weight) {
 }
 
 void calc_priority(uthread_struct_t *ut) {
-	ut->uthread_priority = ut->remaining_credits > 0 ? SCHED_CREDIT_UNDER : SCHED_CREDIT_OVER;
+	// ut->uthread_priority = ut->remaining_credits > 0 ? SCHED_CREDIT_UNDER : SCHED_CREDIT_OVER;`
 }
 
 /*** Credit API ***/
@@ -41,7 +41,7 @@ void grant_credits(uthread_struct_t *ut) {
 }
 
 void burn_credits(uthread_struct_t *ut) {
-	int burned = (int) round(((float) ut->t.last_runtime / SCHED_CREDIT_TIMESTEP) * SCHED_CREDIT_BURN_PER_TIMESTEP);
+	unsigned int burned = (int) round(((float) ut->t.last_runtime / SCHED_CREDIT_TIMESTEP) * SCHED_CREDIT_BURN_PER_TIMESTEP);
 	ut->remaining_credits -= burned;
 #if GTTHREAD_LOG
 	fprintf(stderr, "burn_credits g%dt%d %d credits (now %d) based on %llu us runtime\n", ut->uthread_gid, ut->uthread_tid, burned, ut->remaining_credits, ut->t.last_runtime);
@@ -57,8 +57,6 @@ int credit_accounting(uthread_struct_t *ut) {
 		calc_priority(ut);
 		return SCHED_CREDIT_UNDER;
 	} else {
-		grant_credits(ut);
-		calc_priority(ut);
 		return SCHED_CREDIT_OVER;
 	}
 }
@@ -67,6 +65,14 @@ int credit_accounting(uthread_struct_t *ut) {
 void sched_credit_thread_oninit(uthread_struct_t *ut) {
 #if GTTHREAD_LOG
 	fprintf(stderr, "sched_credit_thread_oninit g%dt%d\n", ut->uthread_gid, ut->uthread_tid);
+#endif
+	grant_credits(ut);
+	calc_priority(ut);
+}
+
+void sched_credit_thread_topup(uthread_struct_t *ut) {
+#if GTTHREAD_LOG
+	fprintf(stderr, "sched_credit_thread_topup g%dt%d\n", ut->uthread_gid, ut->uthread_tid);
 #endif
 	grant_credits(ut);
 	calc_priority(ut);

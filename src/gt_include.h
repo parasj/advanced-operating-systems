@@ -15,6 +15,6 @@
 #include "gt_pq.h"
 #include "gt_kthread.h"
 
-#define GTTHREAD_LOG 0
+#define GTTHREAD_LOG 1
 
 #endif

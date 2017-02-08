@@ -49,4 +49,6 @@ typedef struct uthread_struct
 
 struct __kthread_runqueue;
 extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(struct __kthread_runqueue *));
+
+extern void gt_yield();
 #endif
