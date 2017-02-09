@@ -5,6 +5,7 @@ typedef unsigned long long microtime_t;
 
 typedef struct timekeeper
 {
+    unsigned int tid;
 	microtime_t time_created;
     microtime_t time_destroyed;
 
@@ -19,6 +20,5 @@ extern void timekeeper_create_uthread(timekeeper_t *ut);
 extern void timekeeper_start_uthread(timekeeper_t *t);
 extern void timekeeper_stop_uthread(timekeeper_t *t);
 extern void timekeeper_destroy_uthread(timekeeper_t *t);
-extern void timekeeper_csv(char *str, timekeeper_t *t);
 
 #endif

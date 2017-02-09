@@ -20,6 +20,7 @@
 /** DECLARATIONS **/
 /**********************************************************************/
 
+
 /**********************************************************************/
 /* kthread context identification */
 kthread_context_t *kthread_cpu_map[GT_MAX_KTHREADS];
@@ -79,11 +80,11 @@ static int kthread_handler(void *arg)
 #define k_ctx ((kthread_context_t *)arg)
 
 #if GTTHREAD_LOG
-	printf("Thread to be scheduled on cpu\n");
+	printf("{\"msg\": \"kthread_handler_ready_to_schedule\"}\n");
 #endif
 	kthread_init(k_ctx);
 #if GTTHREAD_LOG
-	printf("\nThread (tid : %u, pid : %u,  cpu : %d, cpu-apic-id %d) ready to run !!\n\n", 
+	printf("{\"msg\": \"kthread_handler_ready_to_run\", \"tid\" : %d, \"pid\" : %d,  \"cpu\" : %d, \"cpu-apic-id\": %d}\n", 
 		k_ctx->tid, k_ctx->pid, k_ctx->cpuid, k_ctx->cpu_apic_id);
 #endif
 
@@ -149,7 +150,7 @@ static inline void KTHREAD_PRINT_SCHED_DEBUGINFO(kthread_context_t *k_ctx, char 
 	struct timeval tv;
 	/* Thread-safe ?? */
 	gettimeofday(&tv, NULL);
-	printf("\n%s SIGNAL (cpu : %d, apic_id : %d) (ts : %d)\n",
+	printf("{'msg':'signal', 'signal': '%s', 'cpu': %d, 'apic_id': %d, 'ts': %d}\n",
 		str, k_ctx->cpuid, k_ctx->cpu_apic_id, tv.tv_usec);
 #endif
 	return;
@@ -179,7 +180,7 @@ extern kthread_runqueue_t *ksched_find_target(uthread_struct_t *u_obj)
 	u_obj->last_cpu_id = kthread_cpu_map[target_cpu]->cpuid;
 
 #if GTTHREAD_LOG
-	printf("Target uthread (id:%d, group:%d) : cpu(%d)\n", u_obj->uthread_tid, u_obj->uthread_gid, kthread_cpu_map[target_cpu]->cpuid);
+	printf("{'msg': 'target_uthread', 'tid': %d, 'gid': %d, 'cpu': %d}\n", u_obj->uthread_tid, u_obj->uthread_gid, kthread_cpu_map[target_cpu]->cpuid);
 #endif
 
 	return(&(kthread_cpu_map[target_cpu]->krunqueue));
@@ -238,8 +239,8 @@ static void ksched_priority(int signo)
 	pid_t pid;
 	int inx;
 
-	// kthread_block_signal(SIGVTALRM);
-	// kthread_block_signal(SIGUSR1);
+	kthread_block_signal(SIGVTALRM);
+	kthread_block_signal(SIGUSR1);
 
 	ksched_announce_cosched_group();
 
@@ -262,8 +263,8 @@ static void ksched_priority(int signo)
 
 	uthread_schedule(&sched_find_best_uthread);
 
-	// kthread_unblock_signal(SIGVTALRM);
-	// kthread_unblock_signal(SIGUSR1);
+	kthread_unblock_signal(SIGVTALRM);
+	kthread_unblock_signal(SIGUSR1);
 	return;
 }
 
@@ -281,7 +282,7 @@ static void gtthread_app_start(void *arg)
 	assert((k_ctx->cpu_apic_id == kthread_apic_id()));
 
 #if GTTHREAD_LOG
-	printf("kthread (%d) ready to schedule", k_ctx->cpuid);
+	printf("{\"msg\": \"app_start\", \"cpu\": \"%d\"}", k_ctx->cpuid);
 #endif
 	while(!(k_ctx->kthread_flags & KTHREAD_DONE))
 	{
@@ -306,7 +307,6 @@ extern void gtthread_app_init()
 	kthread_context_t *k_ctx, *k_ctx_main;
 	kthread_t k_tid;
 	unsigned int num_cpus, inx;
-	
 
 	/* Initialize shared schedule information */
 	ksched_info_init(&ksched_shared_info);
@@ -324,7 +324,7 @@ extern void gtthread_app_init()
 	/* Num of logical processors (cpus/cores) */
 	num_cpus = (int)sysconf(_SC_NPROCESSORS_CONF);
 #if GTTHREAD_LOG
-	fprintf(stderr, "Number of cores : %d\n", num_cpus);
+	fprintf(stderr, "{\"msg\": \"core_count\", \"cores\": %d}\n", num_cpus);
 #endif
 	/* kthreads (virtual processors) on all other logical processors */
 	for(inx=1; inx<num_cpus; inx++)
@@ -338,8 +338,9 @@ extern void gtthread_app_init()
 			fprintf(stderr, "kthread creation failed (errno:%d)\n", errno );
 			exit(0);
 		}
-
-		printf( "kthread(%d) created !!\n", inx);
+#if GTTHREAD_LOG
+	printf("{\"msg\":\"create_kthread\", \"inx\": %d}\n", inx);
+#endif
 	}
 
 	{

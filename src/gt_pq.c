@@ -177,10 +177,11 @@ extern uthread_struct_t *sched_find_best_uthread(kthread_runqueue_t *kthread_run
 	 * [FOUND] Remove uthread from pq and return it. */
 
 	runqueue_t *runq;
+	runqueue_t *searchq;
 	prio_struct_t *prioq;
 	uthread_head_t *u_head;
 	uthread_struct_t *u_obj;
-	unsigned int uprio, ugroup;
+	unsigned int uprio, ugroup, cpu;
 
 	gt_spin_lock(&(kthread_runq->kthread_runqlock));
 
@@ -188,12 +189,64 @@ extern uthread_struct_t *sched_find_best_uthread(kthread_runqueue_t *kthread_run
 
 	kthread_runq->kthread_runqlock.holder = 0x04;
 	if(!(runq->uthread_mask))
-	{ /* No jobs in active. switch runqueue */
+	{
 		assert(!runq->uthread_tot);
-		kthread_runq->active_runq = kthread_runq->expires_runq;
-		kthread_runq->expires_runq = runq;
 
-		runq = kthread_runq->expires_runq;
+		if (sched_strategy == UTHREAD_CREDIT) { /* follow protocol */
+			/* priority to find next uthread
+			 * 1. take from active (it is empty by this point, so skip)
+			 * 2. steal from other queues iff find_best_uthread
+			 * 3. swap the runqueues (while replenishing credits as necessary)
+			 */
+
+			for (cpu = 0; (kthread_cpu_map[cpu]); ++cpu) {
+				if (cpu != kthread_apic_id()) {
+					if (kthread_cpu_map[cpu]->krunqueue.active_runq->uthread_tot > 1) { // there is one more!
+						gt_spin_unlock(&(kthread_runq->kthread_runqlock));
+						u_obj = sched_find_best_uthread(&kthread_cpu_map[cpu]->krunqueue);
+						u_obj->cpu_id = kthread_apic_id();
+						return u_obj;
+					}
+				}
+			}
+
+			if (kthread_runq->expires_runq->uthread_tot > 0) {
+				/* top up credits */			
+				searchq = kthread_runq->active_runq;
+				
+				uprio = 0;
+				ugroup = 0;
+				
+				gt_spin_unlock(&(kthread_runq->kthread_runqlock));
+				for (cpu = 0; (kthread_cpu_map[cpu]); ++cpu) {
+					for (uprio = 0; uprio < MAX_UTHREAD_PRIORITY; uprio++) {
+						for (ugroup = 0; ugroup < MAX_UTHREAD_GROUPS; ugroup++) {
+							if (kthread_cpu_map[cpu]->krunqueue.expires_runq->uthread_tot > 0) {
+								gt_spin_lock(&(kthread_cpu_map[cpu]->krunqueue.kthread_runqlock));
+								
+								u_head = &(kthread_cpu_map[cpu]->krunqueue.expires_runq->prio_array[uprio].group[ugroup]);
+								u_obj = TAILQ_FIRST(u_head);
+								while (u_obj) {
+									sched_credit_thread_topup(u_obj);
+									__rem_from_runqueue(kthread_cpu_map[cpu]->krunqueue.expires_runq, u_obj);
+    								__add_to_runqueue(kthread_cpu_map[cpu]->krunqueue.active_runq, u_obj);
+									
+									u_obj = TAILQ_NEXT(u_obj, uthread_runq);
+								}
+								gt_spin_unlock(&(kthread_cpu_map[cpu]->krunqueue.kthread_runqlock));
+							}
+						}
+					}
+				}
+				gt_spin_lock(&(kthread_runq->kthread_runqlock));
+			}
+		} else { /* No jobs in active. switch runqueue */
+			kthread_runq->active_runq = kthread_runq->expires_runq;
+			kthread_runq->expires_runq = runq;
+			runq = kthread_runq->expires_runq;
+		}
+		
+		/* there wasn't anything in expired */
 		if(!runq->uthread_mask)
 		{
 			assert(!runq->uthread_tot);
@@ -215,7 +268,7 @@ extern uthread_struct_t *sched_find_best_uthread(kthread_runqueue_t *kthread_run
 
 	gt_spin_unlock(&(kthread_runq->kthread_runqlock));
 #if GTTHREAD_LOG
-	printf("cpu(%d) : sched best uthread(id:%d, group:%d)\n", u_obj->cpu_id, u_obj->uthread_tid, u_obj->uthread_gid);
+	printf("{'msg': 'sched_best_uthread', 'cpu': %d, 'tid': %d, 'gid': %d}\n", u_obj->cpu_id, u_obj->uthread_tid, u_obj->uthread_gid);
 #endif
 	return(u_obj);
 }

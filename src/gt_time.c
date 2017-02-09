@@ -22,41 +22,31 @@ microtime_t getmicroseconds() {
 /*** Timekeeper API ***/
 
 void timekeeper_create_uthread(timekeeper_t *t) {
-	assert(t->time_created == 0);
-    t->time_created = getmicroseconds();
-    t->time_destroyed = 0;
-    t->last_start = 0;
-    t->total_runtime = 0;
+	if (t->time_created == 0) {
+        t->time_created = getmicroseconds();
+        t->time_destroyed = 0;
+        t->last_start = 0;
+        t->total_runtime = 0;
+    }
 }
 
 void timekeeper_start_uthread(timekeeper_t *t) {
-	assert(t->last_start == 0);
-    t->last_start = getmicroseconds();
-    t->last_runtime = 0;
+	if (t->last_start == 0) {
+        t->last_start = getmicroseconds();
+        t->last_runtime = 0;
+    }
 }
 
 void timekeeper_stop_uthread(timekeeper_t *t) {
-    assert(t->last_start != 0);
-	microtime_t delta = getmicroseconds() - t->last_start;
-    t->total_runtime += delta;
-    t->last_runtime = delta;
-    t->last_start = 0;
-#if GTTHREAD_LOG
-    fprintf(stderr, "%llu us CPU time elapsed in thread\n", delta);
-#endif
+    if (t->last_start != 0) {
+        microtime_t delta = getmicroseconds() - t->last_start;
+        t->total_runtime += delta;
+        t->last_runtime = delta;
+        t->last_start = 0;
+    }
 }
 
 void timekeeper_destroy_uthread(timekeeper_t *t) {
     assert(t->time_destroyed == 0);
 	t->time_destroyed = getmicroseconds();
-    
-    char str[1000] = {0};
-    timekeeper_csv(str, t);
-#if GTTHREAD_LOG
-    fprintf(stderr, "%s\n", str);
-#endif
-}
-
-void timekeeper_csv(char *str, timekeeper_t *t) {
-    sprintf(str, "created=%llu\tdestroyed=%llu\ttotal_runtime=%llu", t->time_created, t->time_destroyed, t->total_runtime);
 }

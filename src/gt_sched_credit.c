@@ -12,7 +12,7 @@
 
 #include "gt_include.h"
 
-#define SCHED_CREDIT_BURN_PER_TIMESTEP 25
+#define SCHED_CREDIT_BURN_PER_TIMESTEP 200 /* 1 per 10ms */
 #define SCHED_CREDIT_TIMESTEP KTHREAD_VTALRM_USEC // 100ms
 
 #define round(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
@@ -34,7 +34,7 @@ void calc_priority(uthread_struct_t *ut) {
 void grant_credits(uthread_struct_t *ut) {
 	int credits_to_grant = weight2credits(ut->sched_weight);
 #if GTTHREAD_LOG
-	fprintf(stderr, "grant_credits %d %d %d g%dt%d\n", ut->sched_weight, ut->remaining_credits, ut->remaining_credits + credits_to_grant, ut->uthread_gid, ut->uthread_tid);
+	fprintf(stdout, "{\"msg\": \"grant_credits\", \"weight\": %d, \"orig_credits\": %d, \"credits\": %d, \"gid\": %d, \"tid\": %d}\n", ut->sched_weight, ut->remaining_credits, ut->remaining_credits + credits_to_grant, ut->uthread_gid, ut->uthread_tid);
 #endif
 	assert(ut->remaining_credits < credits_to_grant);
 	ut->remaining_credits = credits_to_grant;
@@ -44,17 +44,15 @@ void burn_credits(uthread_struct_t *ut) {
 	unsigned int burned = (int) round(((float) ut->t.last_runtime / SCHED_CREDIT_TIMESTEP) * SCHED_CREDIT_BURN_PER_TIMESTEP);
 	ut->remaining_credits -= burned;
 #if GTTHREAD_LOG
-	fprintf(stderr, "burn_credits g%dt%d %d credits (now %d) based on %llu us runtime\n", ut->uthread_gid, ut->uthread_tid, burned, ut->remaining_credits, ut->t.last_runtime);
+	fprintf(stdout, "{\"msg\": \"burn_credits\", \"gid\": %d, \"id\": %d, \"orig_credits\": %d, \"credits\": %d, \"runtime_microtime\": %llu}\n", ut->uthread_gid, ut->uthread_tid, burned + ut->remaining_credits, ut->remaining_credits, ut->t.last_runtime);
 #endif
 }
 
 int credit_accounting(uthread_struct_t *ut) {
-#if GTTHREAD_LOG	
-	fprintf(stderr, "credit_accounting g%dt%d has %d\n", ut->uthread_gid, ut->uthread_tid, ut->remaining_credits);
-#endif
-	if (ut->remaining_credits >= SCHED_CREDIT_BURN_PER_TIMESTEP) {
-		burn_credits(ut);
-		calc_priority(ut);
+	burn_credits(ut);
+	calc_priority(ut);
+
+	if (ut->remaining_credits > 0) {
 		return SCHED_CREDIT_UNDER;
 	} else {
 		return SCHED_CREDIT_OVER;
@@ -64,7 +62,7 @@ int credit_accounting(uthread_struct_t *ut) {
 /*** Create/Destroy uthread_t ***/
 void sched_credit_thread_oninit(uthread_struct_t *ut) {
 #if GTTHREAD_LOG
-	fprintf(stderr, "sched_credit_thread_oninit g%dt%d\n", ut->uthread_gid, ut->uthread_tid);
+	fprintf(stdout, "{\"msg\": \"sched_credit_thread_oninit\", \"gid\": %d, \"tid\": %d}\n", ut->uthread_gid, ut->uthread_tid);
 #endif
 	grant_credits(ut);
 	calc_priority(ut);
@@ -72,16 +70,13 @@ void sched_credit_thread_oninit(uthread_struct_t *ut) {
 
 void sched_credit_thread_topup(uthread_struct_t *ut) {
 #if GTTHREAD_LOG
-	fprintf(stderr, "sched_credit_thread_topup g%dt%d\n", ut->uthread_gid, ut->uthread_tid);
+	fprintf(stdout, "{\"msg\": \"sched_credit_thread_topup\", \"gid\": %d, \"tid\": %d}\n", ut->uthread_gid, ut->uthread_tid);
 #endif
 	grant_credits(ut);
+	ut->topup_counter++;
 	calc_priority(ut);
 }
 
 void sched_credit_thread_onexit(uthread_struct_t *ut) {
-	// write stats to file
-	fprintf(stderr, "%d\t%d\t%llu\t%llu\n", ut->uthread_gid, ut->uthread_tid, ut->t.total_runtime, getmicroseconds() - ut->t.time_created);
-#if GTTHREAD_LOG
-	fprintf(stderr, "sched_credit_thread_onexit g%dt%d\n", ut->uthread_gid, ut->uthread_tid);
-#endif
+	fprintf(stdout, "{\"msg\": \"sched_credit_thread_onexit\", \"gid\": %d, \"tid\": %d, \"total_cpu_time_microtime\": %llu, \"total_real_time_microtime\": %llu, \"n_top_ups\": %d}\n", ut->uthread_gid, ut->uthread_tid, ut->t.total_runtime, getmicroseconds() - ut->t.time_created, ut->topup_counter);
 }

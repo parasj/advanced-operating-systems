@@ -17,6 +17,8 @@ typedef unsigned char sched_strategy_t;
 #define UTHREAD_O1 0x01
 #define UTHREAD_CREDIT 0x02
 
+extern sched_strategy_t sched_strategy;
+
 /* uthread struct : has all the uthread context info */
 typedef struct uthread_struct
 {
@@ -40,6 +42,8 @@ typedef struct uthread_struct
 	int sched_weight; /* user weight; 256 is the default weight */
 	int remaining_credits; /* credit allocation, proportional to weight where a thread with weight 256 is granted 25 credits */
 
+	int topup_counter; /* counts replenishment cycles (excluding initial grant) */
+
 	timekeeper_t t; /* timekeeper */
 
 	sigjmp_buf uthread_env; /* 156 bytes : save user-level thread context*/
@@ -49,6 +53,6 @@ typedef struct uthread_struct
 
 struct __kthread_runqueue;
 extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(struct __kthread_runqueue *));
-
 extern void gt_yield();
+extern void gt_set_sched_strategy(sched_strategy_t strategy);
 #endif

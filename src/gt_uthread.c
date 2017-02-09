@@ -31,12 +31,13 @@ static int uthread_init(uthread_struct_t *u_new);
 /* uthread creation */
 #define UTHREAD_DEFAULT_SSIZE (16 * 1024)
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int scheduler_strategy, int weight);
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int weight);
 extern void gt_yield();
 
 /**********************************************************************/
 /** DEFNITIONS **/
 /**********************************************************************/
+sched_strategy_t sched_strategy;
 
 /**********************************************************************/
 /* uthread scheduling */
@@ -119,10 +120,6 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 	kthread_block_signal(SIGVTALRM);
 	kthread_block_signal(SIGUSR1);
 
-#if 0
-	fprintf(stderr, "uthread_schedule invoked !!\n");
-#endif
-
 	k_ctx = kthread_cpu_map[kthread_apic_id()];
 	kthread_runq = &(k_ctx->krunqueue);
 
@@ -141,7 +138,7 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			TAILQ_INSERT_TAIL(kthread_zhead, u_obj, uthread_runq);
 
 			// cleanup and write stats
-			if (u_obj->sched_strategy == UTHREAD_CREDIT)
+			if (sched_strategy == UTHREAD_CREDIT)
 				sched_credit_thread_onexit(u_obj);
 			timekeeper_destroy_uthread(&u_obj->t);
 
@@ -164,26 +161,27 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			 ***/
 			
 			/* register uthread done */
-#if GTTHREAD_LOG
-	fprintf(stderr, "uthread_schedule preempt g%dt%d (strat = %d)\n", u_obj->uthread_gid, u_obj->uthread_tid, u_obj->sched_strategy);
-#endif
 			timekeeper_stop_uthread(&u_obj->t);
-
-
-			if (u_obj->sched_strategy == UTHREAD_CREDIT) {
+			if (sched_strategy == UTHREAD_CREDIT) {
+				// fprintf(stderr, "uthread_schedule invoked !!\n");
 				int uthread_status = credit_accounting(u_obj);
-				if (uthread_status == SCHED_CREDIT_UNDER) { // put in active runqueue
+				if (u_obj->remaining_credits > 0) { // put in active runqueue
 					add_to_runqueue(kthread_runq->active_runq, &(kthread_runq->kthread_runqlock), u_obj);
 				} else { // put in expired runqueue
 					add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
 				}
-			} else if (u_obj->sched_strategy == UTHREAD_O1) {
+			} else if (sched_strategy == UTHREAD_O1) {
 				add_to_runqueue(kthread_runq->expires_runq, &(kthread_runq->kthread_runqlock), u_obj);
 			}
 
 			/* XXX: Save the context (signal mask not saved) */
-			if(sigsetjmp(u_obj->uthread_env, 0))
+			if(sigsetjmp(u_obj->uthread_env, 0)) {
+
+				/* Re-install the scheduling signal handlers */
+				kthread_unblock_signal(SIGVTALRM);
+				kthread_unblock_signal(SIGUSR1);
 				return;
+			}
 		}
 	}
 
@@ -194,11 +192,20 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 		/* XXX: We can actually get rid of KTHREAD_DONE flag */
 		if(ksched_shared_info.kthread_tot_uthreads && !ksched_shared_info.kthread_cur_uthreads)
 		{
-			fprintf(stderr, "Quitting kthread (%d)\n", k_ctx->cpuid);
+#if GTTHREAD_LOG
+	fprintf(stderr, "{\"msg\": \"quit_kthread\", \"cpu\": %d}\n", k_ctx->cpuid);
+#endif
 			k_ctx->kthread_flags |= KTHREAD_DONE;
 		}
 
 		siglongjmp(k_ctx->kthread_env, 1);
+
+		/* Re-install the scheduling signal handlers */
+		kthread_unblock_signal(SIGVTALRM);
+		kthread_unblock_signal(SIGUSR1);
+		kthread_install_sighandler(SIGVTALRM, k_ctx-> kthread_sched_timer);
+  		kthread_install_sighandler(SIGUSR1, k_ctx-> kthread_sched_relay);
+		
 		return;
 	}
 
@@ -212,8 +219,8 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 	u_obj->uthread_state = UTHREAD_RUNNING;
 	
 	/* Re-install the scheduling signal handlers */
-	kthread_install_sighandler(SIGVTALRM, k_ctx->kthread_sched_timer);
-	kthread_install_sighandler(SIGUSR1, k_ctx->kthread_sched_relay);
+	kthread_unblock_signal(SIGVTALRM);
+	kthread_unblock_signal(SIGUSR1);
 
 	/* register uthread start */
 	timekeeper_start_uthread(&u_obj->t);
@@ -256,7 +263,7 @@ static void uthread_context_func(int signo)
 
 	/* register uthread done */
 #if GTTHREAD_LOG
-	fprintf(stderr, "uthread_context_func done g%dt%d\n", cur_uthread->uthread_gid, cur_uthread->uthread_tid);
+	fprintf(stderr, "{\"msg\": \"uthread_done\", \"gid\": %d, \"tid\": %d}\n", cur_uthread->uthread_gid, cur_uthread->uthread_tid);
 #endif
 	timekeeper_stop_uthread(&cur_uthread->t);
 
@@ -269,14 +276,16 @@ static void uthread_context_func(int signo)
 
 extern kthread_runqueue_t *ksched_find_target(uthread_struct_t *);
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int scheduler_strategy, int weight)
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int weight)
 {
+	assert(sched_strategy);
+
 	kthread_runqueue_t *kthread_runq;
 	uthread_struct_t *u_new;
 
 	/* Signals used for cpu_thread scheduling */
-	// kthread_block_signal(SIGVTALRM);
-	// kthread_block_signal(SIGUSR1);
+	kthread_block_signal(SIGVTALRM);
+	kthread_block_signal(SIGUSR1);
 
 	/* create a new uthread structure and fill it */
 	if(!(u_new = (uthread_struct_t *)MALLOCZ_SAFE(sizeof(uthread_struct_t))))
@@ -292,8 +301,7 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	u_new->uthread_arg = u_arg;
 
 	u_new->sched_weight = weight;
-	u_new->sched_strategy = scheduler_strategy; // set strategy
-	if (u_new->sched_strategy == UTHREAD_CREDIT) // give initial credit grant
+	if (sched_strategy == UTHREAD_CREDIT) // give initial credit grant
 		sched_credit_thread_oninit(u_new);
 
 
@@ -320,6 +328,7 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	kthread_runq = ksched_find_target(u_new);
 
 	*u_tid = u_new->uthread_tid;
+	u_new->t.tid = *u_tid;
 
 	timekeeper_create_uthread(&u_new->t); // init timekeeper
 
@@ -330,17 +339,24 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	/* WARNING : DONOT USE u_new WITHOUT A LOCK, ONCE IT IS ENQUEUED. */
 
 	/* Resume with the old thread (with all signals enabled) */
-	// kthread_unblock_signal(SIGVTALRM);
-	// kthread_unblock_signal(SIGUSR1);
+	kthread_unblock_signal(SIGVTALRM);
+	kthread_unblock_signal(SIGUSR1);
 
 	return 0;
 }
 
 void gt_yield() {
 #if GTTHREAD_LOG
-	fprintf(stderr, "YIELD!\n");
+	fprintf(stderr, "{\"msg\": \"gt_yield\", \"microtime\": %llu}\n", getmicroseconds());
 #endif
 	uthread_schedule(&sched_find_best_uthread);
+}
+
+void gt_set_sched_strategy(sched_strategy_t strategy) {
+#if GTTHREAD_LOG
+	fprintf(stderr, "{\"msg\": \"set_sched_strategy\", \"microtime\": %llu}\n", getmicroseconds());
+#endif
+	sched_strategy = strategy;
 }
 
 #if 0
