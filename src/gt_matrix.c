@@ -82,6 +82,8 @@ static void * uthread_mulmat(void *p) {
 
 uthread_arg_t uargs[NTRIALS];
 uthread_t utids[NTRIALS];
+microtime_t cputimes[NTRIALS];
+microtime_t realtimes[NTRIALS];
 matrix_t A[NTRIALS];
 matrix_t B[NTRIALS];
 matrix_t C[NTRIALS];
@@ -113,8 +115,8 @@ int main(int argc, char *argv[])
 	trialid = 0;
 
 	int i;
-	for (mat_size = 32; mat_size <= 256; mat_size <<= 1) {
-		for (weight = 1; weight <= 4; ++weight) {
+	for (weight = 4; weight >= 1; --weight) {
+		for (mat_size = 32; mat_size <= 256; mat_size <<= 1) {
 			for (i = 0; i < 8; ++i) {
 				generate_matrix(&A[trialid], mat_size, 1);
 				generate_matrix(&B[trialid], mat_size, 1);
@@ -129,8 +131,8 @@ int main(int argc, char *argv[])
 
 	int iter;
 
-	for (mat_size = 32; mat_size <= 256; mat_size <<= 1) {
-		for (weight = 4; weight <= 4; ++weight) {
+	for (weight = 4; weight >= 1; --weight) {
+		for (mat_size = 32; mat_size <= 256; mat_size <<= 1) {
 			for (iter = 0; iter < 8; ++iter) {
 				uarg = &uargs[trialid];
 				uarg->_A = &A[trialid];
@@ -142,7 +144,7 @@ int main(int argc, char *argv[])
 				uarg->tid = trialid;
 				uarg->gid = 0;
 
-				uthread_create(&utids[trialid], uthread_mulmat, uarg, uarg->gid, weight);
+				uthread_create(&utids[trialid], uthread_mulmat, uarg, uarg->gid, weight, &cputimes[trialid], &realtimes[trialid]);
 				// fprintf(stdout, "\n{\"msg\": \"trial_scheduled\", \"trial_id\": %d, \"mat_size\": %d, \"weight\": %d}\n", trialid, mat_size, weight);
 				++trialid;
 			}
@@ -150,6 +152,16 @@ int main(int argc, char *argv[])
 	}
 
 	gtthread_app_exit();
+
+	trialid = 0;
+	for (weight = 4; weight >= 1; --weight) {
+		for (mat_size = 32; mat_size <= 256; mat_size <<= 1) {
+			for (iter = 0; iter < 8; ++iter) {
+				fprintf(stderr, "{\"size\": %d, \"wgt\" %d, \"iteration"\: %d, \"rtime\" %llu, \"ctime\" %llu\n", mat_size, weight, iter, cputimes[trialid], realtimes[trialid]);
+				trialid++;
+			}
+		}
+	}
 
 	return(0);
 }

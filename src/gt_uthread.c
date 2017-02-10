@@ -31,7 +31,7 @@ static int uthread_init(uthread_struct_t *u_new);
 /* uthread creation */
 #define UTHREAD_DEFAULT_SSIZE (16 * 1024)
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int weight);
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int weight, microtime_t *cputimes, microtime_t *realtimes);
 extern void gt_yield();
 
 /**********************************************************************/
@@ -138,6 +138,8 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			TAILQ_INSERT_TAIL(kthread_zhead, u_obj, uthread_runq);
 
 			// cleanup and write stats
+			*(u_obj->cputime) = u_obj->t.total_runtime;
+			*(u_obj->realtime) = getmicroseconds() - u_obj->t.time_created;
 			if (sched_strategy == UTHREAD_CREDIT)
 				sched_credit_thread_onexit(u_obj);
 			timekeeper_destroy_uthread(&u_obj->t);
@@ -276,7 +278,7 @@ static void uthread_context_func(int signo)
 
 extern kthread_runqueue_t *ksched_find_target(uthread_struct_t *);
 
-extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int weight)
+extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, uthread_group_t u_gid, int weight, microtime_t *cputimes, microtime_t *realtimes)
 {
 	assert(sched_strategy);
 
@@ -299,6 +301,9 @@ extern int uthread_create(uthread_t *u_tid, int (*u_func)(void *), void *u_arg, 
 	u_new->uthread_gid = u_gid;
 	u_new->uthread_func = u_func;
 	u_new->uthread_arg = u_arg;
+
+	u_new->cputime = cputimes;
+	u_new->realtime = realtimes;
 
 	u_new->sched_weight = weight;
 	if (sched_strategy == UTHREAD_CREDIT) // give initial credit grant

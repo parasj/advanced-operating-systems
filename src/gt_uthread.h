@@ -44,6 +44,9 @@ typedef struct uthread_struct
 
 	int topup_counter; /* counts replenishment cycles (excluding initial grant) */
 
+	microtime_t *cputime;
+	microtime_t *realtime;
+
 	timekeeper_t t; /* timekeeper */
 
 	sigjmp_buf uthread_env; /* 156 bytes : save user-level thread context*/
