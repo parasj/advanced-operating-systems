@@ -1,2 +1,0 @@
-gcc -g -c src/gt_uthread.c -o src/gt_uthread.o
-Makefile:11: recipe for target 'src/gt_uthread.o' failed
