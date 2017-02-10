@@ -93,40 +93,57 @@ static void usage(char *argv[]) {
 	fprintf(stderr, "usage: %s [0 | 1] where 0 represents the O(1) scheduler and 1 represents using the credit scheduler (default is O(1) scheduler)\n", argv[0]);
 }
 
-static float calculateSD(float data[])
+static float calculateSUM(float data[])
 {
     float sum = 0.0, mean;
 
     int i;
+	int n = 8;
 
-    for(i=0; i<10; ++i)
+    for(i=0; i<n; ++i)
     {
         sum += data[i];
     }
 
-    mean = sum/10;
+    return sum;
+}
+
+static float calculateMEAN(float data[])
+{
+    float sum = 0.0, mean;
+
+    int i;
+	int n = 8;
+
+    for(i=0; i<n; ++i)
+    {
+        sum += data[i];
+    }
+
+    mean = sum/n;
 
     return mean;
 }
 
 
-static float calculateMEAN(float data[])
+static float calculateSD(float data[])
 {
     float sum = 0.0, mean, standardDeviation = 0.0;
 
     int i;
+	int n = 8;
 
-    for(i=0; i<10; ++i)
+    for(i=0; i<n; ++i)
     {
         sum += data[i];
     }
 
-    mean = sum/10;
+    mean = sum/n;
 
-    for(i=0; i<10; ++i)
+    for(i=0; i<n; ++i)
         standardDeviation += pow(data[i] - mean, 2);
 
-    return sqrt(standardDeviation/10);
+    return sqrt(standardDeviation/n);
 }
 
 int main(int argc, char *argv[])
@@ -209,7 +226,7 @@ int main(int argc, char *argv[])
 				if (weight > 1 || mat_size < 256 || iter < 8) fprintf(stdout, ",\n");
 			}
 
-			fprintf(stderr, "%d mat_size %d, credits %d - mean(cputime)=%f stddev(cputime)=%f mean(realtime)=%f stddev(realtime)=%f\n", trialid, mat_size, weight*25, calculateMEAN(CPUtime), calculateSD(CPUtime), calculateMEAN(Realtime), calculateSD(Realtime));
+			fprintf(stderr, "%d mat_size %d, credits %d - mean(cputime)=%f stddev(cputime)=%f mean(realtime)=%f stddev(realtime)=%f total(realtime)=%d\n", trialid, mat_size, weight*25, calculateMEAN(CPUtime), calculateSD(CPUtime), calculateMEAN(Realtime), calculateSD(Realtime), (int) calculateSUM(Realtime));
 		}
 	}
 	fprintf(stdout, "]\n\n");
