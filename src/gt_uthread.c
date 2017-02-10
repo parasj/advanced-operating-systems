@@ -138,11 +138,11 @@ extern void uthread_schedule(uthread_struct_t * (*kthread_best_sched_uthread)(kt
 			TAILQ_INSERT_TAIL(kthread_zhead, u_obj, uthread_runq);
 
 			// cleanup and write stats
-			*(u_obj->cputime) = u_obj->t.total_runtime;
-			*(u_obj->realtime) = getmicroseconds() - u_obj->t.time_created;
 			if (sched_strategy == UTHREAD_CREDIT)
 				sched_credit_thread_onexit(u_obj);
 			timekeeper_destroy_uthread(&u_obj->t);
+			*(u_obj->cputime) = u_obj->t.total_runtime;
+			*(u_obj->realtime) = u_obj->t.time_destroyed - u_obj->t.time_created;
 
 			gt_spin_unlock(&(kthread_runq->kthread_runqlock));
 		

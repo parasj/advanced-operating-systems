@@ -78,5 +78,7 @@ void sched_credit_thread_topup(uthread_struct_t *ut) {
 }
 
 void sched_credit_thread_onexit(uthread_struct_t *ut) {
+#if GTTHREAD_LOG
 	fprintf(stdout, "{\"msg\": \"sched_credit_thread_onexit\", \"gid\": %d, \"tid\": %d, \"total_cpu_time_microtime\": %llu, \"total_real_time_microtime\": %llu, \"n_top_ups\": %d}\n", ut->uthread_gid, ut->uthread_tid, ut->t.total_runtime, getmicroseconds() - ut->t.time_created, ut->topup_counter);
+#endif
 }

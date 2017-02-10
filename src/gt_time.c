@@ -22,28 +22,22 @@ microtime_t getmicroseconds() {
 /*** Timekeeper API ***/
 
 void timekeeper_create_uthread(timekeeper_t *t) {
-	if (t->time_created == 0) {
-        t->time_created = getmicroseconds();
-        t->time_destroyed = 0;
-        t->last_start = 0;
-        t->total_runtime = 0;
-    }
+	assert(t->time_created == 0);
+    t->time_created = getmicroseconds();
+    t->time_destroyed = 0;
+    t->last_start = 0;
+    t->total_runtime = 0;
 }
 
 void timekeeper_start_uthread(timekeeper_t *t) {
-	if (t->last_start == 0) {
-        t->last_start = getmicroseconds();
-        t->last_runtime = 0;
-    }
+    t->last_start = getmicroseconds();
 }
 
 void timekeeper_stop_uthread(timekeeper_t *t) {
-    if (t->last_start != 0) {
-        microtime_t delta = getmicroseconds() - t->last_start;
-        t->total_runtime += delta;
-        t->last_runtime = delta;
-        t->last_start = 0;
-    }
+    assert(t->last_start != 0);
+    microtime_t delta = getmicroseconds() - t->last_start;
+    t->total_runtime += delta;
+    t->last_start = 0;
 }
 
 void timekeeper_destroy_uthread(timekeeper_t *t) {

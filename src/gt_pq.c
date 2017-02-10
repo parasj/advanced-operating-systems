@@ -183,7 +183,8 @@ extern uthread_struct_t *sched_find_best_uthread(kthread_runqueue_t *kthread_run
 	uthread_struct_t *u_obj;
 	unsigned int uprio, ugroup, cpu;
 
-	gt_spin_lock(&(kthread_runq->kthread_runqlock));
+	gt_spinlock_t *lock = &(kthread_runq->kthread_runqlock);
+	gt_spin_lock(lock);
 
 	runq = kthread_runq->active_runq;
 
@@ -202,6 +203,7 @@ extern uthread_struct_t *sched_find_best_uthread(kthread_runqueue_t *kthread_run
 			for (cpu = 0; (kthread_cpu_map[cpu]); ++cpu) {
 				if (cpu != kthread_apic_id()) {
 					if (kthread_cpu_map[cpu]->krunqueue.active_runq->uthread_tot > 1) { // there is one more!
+						gt_spin_unlock(lock);
 						gt_spin_unlock(&(kthread_runq->kthread_runqlock));
 						u_obj = sched_find_best_uthread(&kthread_cpu_map[cpu]->krunqueue);
 						u_obj->cpu_id = kthread_apic_id();

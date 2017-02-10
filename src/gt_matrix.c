@@ -10,6 +10,7 @@
 #include <setjmp.h>
 #include <errno.h>
 #include <assert.h>
+#include <math.h>
 
 #include "gt_include.h"
 
@@ -69,12 +70,12 @@ static void * uthread_mulmat(void *p) {
 		}
 	
 		
-		if (i == 64)
+		if (i == ptr->_A->rows / 2)
 			gt_yield();
 	}
 
 	time_end = getmicroseconds();
-	fprintf(stderr, "{'msg': 'trial_complete', 'tid': %d, 'gid': %d, 'trial_time': %llu, 'mat_size': %d, 'credits': %d}\n", ptr->tid, ptr->gid, time_end - tv1, ptr->_A->rows, ptr->credits * 25);
+	// fprintf(stderr, "{'msg': 'trial_complete', 'tid': %d, 'gid': %d, 'trial_time': %llu, 'mat_size': %d, 'credits': %d}\n", ptr->tid, ptr->gid, time_end - tv1, ptr->_A->rows, ptr->credits * 25);
 
 #undef ptr
 	return 0;
@@ -90,6 +91,42 @@ matrix_t C[NTRIALS];
 
 static void usage(char *argv[]) {
 	fprintf(stderr, "usage: %s [0 | 1] where 0 represents the O(1) scheduler and 1 represents using the credit scheduler (default is O(1) scheduler)\n", argv[0]);
+}
+
+static float calculateSD(float data[])
+{
+    float sum = 0.0, mean;
+
+    int i;
+
+    for(i=0; i<10; ++i)
+    {
+        sum += data[i];
+    }
+
+    mean = sum/10;
+
+    return mean;
+}
+
+
+static float calculateMEAN(float data[])
+{
+    float sum = 0.0, mean, standardDeviation = 0.0;
+
+    int i;
+
+    for(i=0; i<10; ++i)
+    {
+        sum += data[i];
+    }
+
+    mean = sum/10;
+
+    for(i=0; i<10; ++i)
+        standardDeviation += pow(data[i] - mean, 2);
+
+    return sqrt(standardDeviation/10);
 }
 
 int main(int argc, char *argv[])
@@ -153,15 +190,29 @@ int main(int argc, char *argv[])
 
 	gtthread_app_exit();
 
+
+
+	fprintf(stdout, "[");
 	trialid = 0;
 	for (weight = 4; weight >= 1; --weight) {
 		for (mat_size = 32; mat_size <= 256; mat_size <<= 1) {
+			float CPUtime[8];
+			float Realtime[8];
+
+			int n = 0;
+
 			for (iter = 0; iter < 8; ++iter) {
-				fprintf(stderr, "{\"size\": %d, \"wgt\" %d, \"iteration"\: %d, \"rtime\" %llu, \"ctime\" %llu\n", mat_size, weight, iter, cputimes[trialid], realtimes[trialid]);
+				CPUtime[iter] = cputimes[trialid];
+				Realtime[iter] = realtimes[trialid];
+				fprintf(stdout, "{\"size\": %d, \"wgt\": %d, \"iteration\": %d, \"rtime\": %llu, \"ctime\": %llu}", mat_size, weight, iter, realtimes[trialid], cputimes[trialid]);
 				trialid++;
+				if (weight > 1 || mat_size < 256 || iter < 8) fprintf(stdout, ",\n");
 			}
+
+			fprintf(stderr, "%d mat_size %d, credits %d - mean(cputime)=%f stddev(cputime)=%f mean(realtime)=%f stddev(realtime)=%f\n", trialid, mat_size, weight*25, calculateMEAN(CPUtime), calculateSD(CPUtime), calculateMEAN(Realtime), calculateSD(Realtime));
 		}
 	}
+	fprintf(stdout, "]\n\n");
 
 	return(0);
 }
